@@ -1,0 +1,44 @@
+[
+  {
+    "id": "open-source-vs-closed",
+    "title": "Open Source vs Closed Frontier Labs",
+    "topic": "Will decentralized open-source AI models outpace closed frontier labs by 2027?",
+    "intro_script": "Welcome everyone to Pass-The-Mic! Our first debate question is: Will decentralized open-source AI models outpace closed frontier labs by 2027? We have brilliant minds in the room. Let's start the roundtable with Team Orange. Team Orange, what is your stance on this?",
+    "suggested_first_speaker": "Team Orange"
+  },
+  {
+    "id": "autonomous-coding-agents",
+    "title": "The End of Manual Code Writing?",
+    "topic": "Will human software engineers write zero lines of manual code within the next 5 years?",
+    "intro_script": "Welcome everyone to Pass-The-Mic! Tonight's debate touches every developer: Will human software engineers write zero lines of manual code within 5 years, or is software architecture irreplaceable? Let's kick off with Team Red. Team Red, where do you stand?",
+    "suggested_first_speaker": "Team Red"
+  },
+  {
+    "id": "local-vs-cloud-ai",
+    "title": "Local Hardware vs Centralized Cloud",
+    "topic": "Will the majority of daily agent interactions happen on personal local devices or centralized hyperscalers?",
+    "intro_script": "Welcome to Pass-The-Mic! Our topic: Local Hardware versus Centralized Cloud. Will personal on-device SLMs dominate privacy and latency, or will massive centralized clouds remain supreme? Let's hear first from Team Blue. Team Blue, take the mic!",
+    "suggested_first_speaker": "Team Blue"
+  },
+  {
+    "id": "agi-compute-licensing",
+    "title": "Frontier Compute Governance & Licensing",
+    "topic": "Should training frontier models beyond 10^26 FLOPs require mandatory international government licenses?",
+    "intro_script": "Welcome to Pass-The-Mic! Tonight's high-stakes topic: AI Safety and Governance. Should training runs above 10 to the 26 FLOPs require mandatory international licenses? Team Orange, open the debate!",
+    "suggested_first_speaker": "Team Orange"
+  },
+  {
+    "id": "embodied-vs-virtual-agents",
+    "title": "Humanoid Robotics vs Pure Software Agents",
+    "topic": "Which will generate greater economic impact by 2030: physical humanoid robots or digital software agents?",
+    "intro_script": "Welcome everyone! Our debate: Humanoid Robotics versus Pure Digital Agents. Which domain will transform the global economy first? Team Red, the floor is yours!",
+    "suggested_first_speaker": "Team Red"
+  },
+  {
+    "id": "reasoning-vs-scale",
+    "title": "Post-Training Reasoning vs Pre-Training Scaling",
+    "topic": "Has traditional pre-training hit diminishing returns in favor of test-time search and reasoning?",
+    "intro_script": "Welcome to Pass-The-Mic! Today's technical showdown: Has pre-training hit a wall, shifting all breakthrough value to test-time reasoning compute? Team Blue, lead us off!",
+    "suggested_first_speaker": "Team Blue"
+  }
+]
