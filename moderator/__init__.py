@@ -1,9 +1,8 @@
-"""Moderator engine and acoustic/hybrid coordination for pass-the-mic."""
+"""Moderator engine and coordination server for pass-the-mic."""
 
 from .moderator_agent import ModeratorAgent
 from .dashboard import RoundtableDashboard, get_local_ip
 from .server import app, coordinator, load_topics
-from .run_moderator import run_acoustic_moderator
 
 __all__ = [
     "ModeratorAgent",
@@ -12,5 +11,4 @@ __all__ = [
     "app",
     "coordinator",
     "load_topics",
-    "run_acoustic_moderator",
 ]

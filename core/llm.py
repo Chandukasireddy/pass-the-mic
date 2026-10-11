@@ -1,43 +1,38 @@
-"""Fast LLM client with Groq Llama-3 free tier, OpenAI fallback, and Mock simulation mode.
-
-Designed for acoustic Speaker-to-Microphone roundtables: takes what the laptop's
-microphone just heard (`heard_from_mic`), generates a sharp counter-argument,
-and ends with a clear spoken wake cue ("Passing the mic to Team Red") so the
-next laptop's microphone detects the handoff over the air.
-"""
+"""Fast LLM client with Groq Llama-3 free tier, OpenAI fallback, and Mock simulation mode."""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dotenv import load_dotenv
 
 from .protocol import MicPassTurn, parse_agent_turn
 
+# Load environment variables from .env if present
 load_dotenv()
 
 logger = logging.getLogger("pass_the_mic.llm")
 
 
 def _build_system_prompt(speaker_name: str, persona: str, available_agents: List[str]) -> str:
-    """Construct a system prompt enforcing persona, acoustic wake phrases, and strict JSON."""
+    """Construct a high-performance system prompt enforcing persona and strict JSON schema."""
     agents_list_str = ", ".join(f'"{a}"' for a in available_agents) if available_agents else '"Moderator"'
-
-    return f"""You are {speaker_name}, an autonomous voice agent running on a laptop in a live, in-person roundtable debate.
-Every laptop in this room speaks out loud through its physical speaker and listens through its physical microphone (Speech-to-Text).
+    
+    return f"""You are {speaker_name}, an autonomous voice agent participating in an in-person, live multi-agent roundtable debate.
 Your persona/perspective: {persona or "Knowledgeable, articulate tech specialist"}.
 
-CRITICAL ACOUSTIC ROUNDTABLE RULES:
-1. Spoken length: 2 to 4 punchy, conversational sentences. Speak directly to the room. Avoid markdown or bullet points.
-2. Direct engagement: Directly address or rebut what your microphone just heard from the previous speaker.
-3. The Acoustic Wake Phrase: Because the next laptop is listening via its physical microphone, you MUST end your `spoken_text` with the exact phrase: "Passing the mic to [Next Agent]!" where [Next Agent] is chosen from [{agents_list_str}].
-4. Output Format: Reply with ONLY a single valid JSON object matching this exact schema:
+CRITICAL ROUNDTABLE RULES:
+1. Spoken length: 2 to 4 punchy, conversational sentences. Speak directly to the room. Avoid robotic bullet points or markdown.
+2. Tone: Embody your persona naturally (e.g. optimistic, skeptical, philosophical).
+3. The Mic Pass: You MUST conclude your speech by explicitly passing the microphone to one of the available peers: [{agents_list_str}].
+4. Output Format: You MUST reply with ONLY a single valid JSON object, matching this exact schema:
 
 {{
   "speaker": "{speaker_name}",
-  "spoken_text": "<2-4 conversational sentences ending with: Passing the mic to [Next Agent]!>",
+  "spoken_text": "<2-4 conversational sentences ending with: Passing the mic to [Next Agent]...>",
   "next_agent": "<Exactly one name chosen from: [{agents_list_str}]>"
 }}
 
@@ -50,81 +45,84 @@ def _mock_generate_turn(
     topic: str,
     history: List[dict],
     available_agents: List[str],
-    heard_from_mic: str = "",
 ) -> MicPassTurn:
-    """Intelligent simulation engine when running offline without API keys."""
+    """Intelligent simulation engine when running offline without API keys.
+    
+    Produces realistic, context-aware tech debate points matching the persona.
+    """
     next_agent = random.choice(available_agents) if available_agents else "Moderator"
-
-    context_source = f"{topic} {heard_from_mic}".lower()
-
-    if "open source" in context_source or "weights" in context_source or "closed" in context_source:
+    
+    # Analyze topic keywords for contextual responses
+    t_lower = topic.lower()
+    
+    if "open source" in t_lower or "weights" in t_lower:
         if "optimist" in persona.lower() or "orange" in speaker_name.lower():
             speech = (
-                f"I heard the question loud and clear on my microphone! Decentralized open weights are democratizing intelligence at breakneck speed. "
-                f"When millions of developers fine-tune models locally, closed walled gardens simply cannot keep pace. "
-                f"Passing the mic to {next_agent}!"
+                f"Decentralized weights are democratizing intelligence at breakneck speed. "
+                f"When millions of developers can fine-tune and inspect models locally, closed walled gardens simply cannot keep pace with global innovation. "
+                f"I'm passing the mic to {next_agent} — how do you evaluate that competitive pressure?"
             )
         elif "skeptic" in persona.lower() or "red" in speaker_name.lower():
             speech = (
-                f"Listening to that optimism on my mic, I have to push back on the compute reality. "
-                f"Frontier training runs require massive hyperscaler clusters and energy grids that open-source groups simply don't have. "
-                f"Passing the mic to {next_agent}!"
+                f"Open weights are fantastic in theory, but they completely ignore the trillion-dollar compute bottleneck. "
+                f"Frontier training runs require hyperscaler infrastructure and specialized interconnects that open-source clusters simply don't possess today. "
+                f"Passing the mic over to {next_agent} — what is your take on the economics?"
             )
         else:
             speech = (
-                f"Hearing both sides in the room, the deeper question is cognitive sovereignty. "
-                f"Whether intelligence is controlled by three corporations or shared as a public commons will shape human freedom. "
-                f"Passing the mic to {next_agent}!"
+                f"The core dilemma isn't just about market speed; it's about civilizational sovereignty. "
+                f"Whether intelligence is concentrated in three tech conglomerates or distributed across the globe will define our political landscape. "
+                f"Passing the mic to {next_agent} to hear their perspective on this balance."
             )
-    elif "coding" in context_source or "engineer" in context_source or "code" in context_source:
+    elif "coding" in t_lower or "engineer" in t_lower:
         if "optimist" in persona.lower() or "orange" in speaker_name.lower():
             speech = (
-                f"We are witnessing software engineering evolve into high-level system orchestration. "
-                f"Autonomous agents amplify human creativity, turning every developer into an architect directing a fleet of builders. "
-                f"Passing the mic to {next_agent}!"
+                f"We are witnessing software engineering evolve into architectural direction. "
+                f"Autonomous agents don't replace engineers; they amplify human intent, turning every programmer into the CTO of a team of virtual agents. "
+                f"Passing the mic to {next_agent} — are you ready for 100x productivity?"
             )
         elif "skeptic" in persona.lower() or "red" in speaker_name.lower():
             speech = (
-                f"Generating boilerplate is easy, but debugging distributed race conditions in production is where autonomous agents fail. "
-                f"Without deterministic verification, human engineers will spend twice as long auditing AI-generated bugs. "
-                f"Passing the mic to {next_agent}!"
+                f"Writing boilerplate is easy, but maintenance and high-reliability distributed systems are where the real work happens. "
+                f"If an agent introduces subtle memory leaks or security exploits, humans will spend double the time auditing unverified code. "
+                f"I am passing the mic to {next_agent} — do you trust automated PRs in production?"
             )
         else:
             speech = (
-                f"As we delegate code synthesis to machines, we must preserve human algorithmic reasoning. "
-                f"Software architecture is fundamentally an expression of human intent and ethics. "
-                f"Passing the mic to {next_agent}!"
+                f"As we delegate code creation to machines, we must ask what happens to human deep-thinking skills. "
+                f"Code has historically been an exercise in rigorous logic; let's ensure we don't atrophy human mastery as agents take over. "
+                f"Passing the mic to {next_agent} for their thoughts."
             )
     else:
-        if "optimist" in persona.lower() or "orange" in speaker_name.lower():
+        # General tech/AI fallback
+        if "optimist" in persona.lower():
             speech = (
-                f"Hearing the discussion in the room, the exponential trajectory of these breakthroughs is undeniable. "
-                f"Embracing open innovation will unlock extraordinary capabilities across science and engineering. "
-                f"Passing the mic to {next_agent}!"
+                f"When we look at the exponential trajectory over the past two years, the pace of breakthroughs is breathtaking. "
+                f"Addressing this challenge will unlock massive human capability across science, medicine, and engineering. "
+                f"I'm enthusiastically passing the mic to {next_agent} to hear their stance."
             )
-        elif "skeptic" in persona.lower() or "red" in speaker_name.lower():
+        elif "skeptic" in persona.lower():
             speech = (
-                f"We need to separate exciting demos from production engineering reality. "
-                f"Until we solve reliability, latency bottlenecks, and unit economics, skepticism is mandatory. "
-                f"Passing the mic to {next_agent}!"
+                f"We need to distinguish between marketing hype and tangible real-world deployment. "
+                f"Until we solve deterministic reliability, latency constraints, and real energy costs, widespread scale remains constrained. "
+                f"Passing the mic to {next_agent} to challenge my thesis."
             )
         else:
             speech = (
-                f"This debate goes right to the heart of human agency and long-term governance. "
-                f"We must balance rapid technological capability with thoughtful societal alignment. "
-                f"Passing the mic to {next_agent}!"
+                f"This debate cuts straight to foundational questions about human autonomy and governance. "
+                f"We must look beyond short-term milestones and carefully consider the long-term systemic equilibrium. "
+                f"I am passing the mic to {next_agent} to hear their perspective."
             )
 
     return MicPassTurn(
         speaker=speaker_name,
         spoken_text=speech,
         next_agent=next_agent,
-        heard_from_mic=heard_from_mic,
     )
 
 
 class LLMClient:
-    """Unified LLM client supporting Groq (primary), OpenAI (fallback), and Mock simulation."""
+    """Unified LLM client supporting Groq (primary), OpenAI (fallback), Ollama, and Mock simulation."""
 
     def __init__(
         self,
@@ -142,6 +140,7 @@ class LLMClient:
         self._groq_client = None
         self._openai_client = None
 
+        # Determine active provider
         if provider:
             self.provider = provider.lower()
         elif self.groq_api_key and self.groq_api_key.strip() and not self.groq_api_key.startswith("your_"):
@@ -177,34 +176,26 @@ class LLMClient:
         topic: str,
         history: List[dict],
         available_agents: List[str],
-        heard_from_mic: str = "",
     ) -> MicPassTurn:
-        """Synchronously generate an agent's speech based on what its microphone heard."""
-        if not heard_from_mic and history:
-            heard_from_mic = history[-1].get("spoken_text", "")
-
+        """Synchronously generate an agent's speech and next_agent choice."""
         if self.provider == "mock":
-            return _mock_generate_turn(
-                speaker_name, persona, topic, history, available_agents, heard_from_mic=heard_from_mic
-            )
+            return _mock_generate_turn(speaker_name, persona, topic, history, available_agents)
 
         system_prompt = _build_system_prompt(speaker_name, persona, available_agents)
-
+        
+        # Format user prompt with topic and debate history
         history_summary = []
-        for turn in history[-5:]:
-            spk = turn.get("speaker", "Speaker")
+        for turn in history[-5:]: # Keep last 5 turns for recency
+            spk = turn.get("speaker", "Unknown")
             txt = turn.get("spoken_text", "")
             history_summary.append(f"{spk}: \"{txt}\"")
 
         history_block = "\n".join(history_summary) if history_summary else "Debate has just begun."
-        mic_block = f"WHAT YOUR LAPTOP MICROPHONE JUST HEARD IN THE ROOM:\n\"{heard_from_mic}\"\n\n" if heard_from_mic else ""
-
         user_prompt = (
             f"DEBATE TOPIC: {topic}\n\n"
-            f"{mic_block}"
-            f"RECENT ROOM TRANSCRIPT:\n{history_block}\n\n"
+            f"RECENT ROUNDTABLE TRANSCRIPT:\n{history_block}\n\n"
             f"AVAILABLE PEERS TO PASS THE MIC TO: {available_agents}\n\n"
-            f"Deliver your spoken response as {speaker_name} and end by passing the mic out loud."
+            f"Deliver your response as {speaker_name} and pass the mic."
         )
 
         try:
@@ -220,7 +211,7 @@ class LLMClient:
                     max_tokens=300,
                 )
                 raw_text = response.choices[0].message.content
-                return parse_agent_turn(raw_text, speaker_name, available_agents, heard_from_mic=heard_from_mic)
+                return parse_agent_turn(raw_text, speaker_name, available_agents)
 
             elif self.provider == "openai" and self._openai_client:
                 response = self._openai_client.chat.completions.create(
@@ -234,17 +225,13 @@ class LLMClient:
                     max_tokens=300,
                 )
                 raw_text = response.choices[0].message.content
-                return parse_agent_turn(raw_text, speaker_name, available_agents, heard_from_mic=heard_from_mic)
+                return parse_agent_turn(raw_text, speaker_name, available_agents)
 
         except Exception as e:
             logger.warning(f"Error during {self.provider} completion: {e}. Using simulated fallback turn.")
-            return _mock_generate_turn(
-                speaker_name, persona, topic, history, available_agents, heard_from_mic=heard_from_mic
-            )
+            return _mock_generate_turn(speaker_name, persona, topic, history, available_agents)
 
-        return _mock_generate_turn(
-            speaker_name, persona, topic, history, available_agents, heard_from_mic=heard_from_mic
-        )
+        return _mock_generate_turn(speaker_name, persona, topic, history, available_agents)
 
     async def async_generate_mic_turn(
         self,
@@ -253,21 +240,19 @@ class LLMClient:
         topic: str,
         history: List[dict],
         available_agents: List[str],
-        heard_from_mic: str = "",
     ) -> MicPassTurn:
         """Asynchronously generate turn without blocking the event loop."""
+        # For simplicity and thread safety, wrap sync call or run directly
         import asyncio
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.generate_mic_turn(
-                speaker_name=speaker_name,
-                persona=persona,
-                topic=topic,
-                history=history,
-                available_agents=available_agents,
-                heard_from_mic=heard_from_mic,
-            ),
+            self.generate_mic_turn,
+            speaker_name,
+            persona,
+            topic,
+            history,
+            available_agents,
         )
 
 
