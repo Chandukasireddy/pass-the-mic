@@ -136,3 +136,35 @@ def test_server_rest_endpoints():
     topics = res_topics.json()
     assert len(topics) >= 1
     assert "topic" in topics[0]
+
+
+def test_magnus_agent_config_and_web_endpoints():
+    from magnus_agent.app import app as magnus_app
+    from magnus_agent.magnus_config import (
+        MagnusSettings,
+        check_magnus_wake_phrase,
+        load_gemini_api_key_from_env,
+    )
+
+    key = load_gemini_api_key_from_env()
+    assert isinstance(key, str) and len(key) > 5
+
+    s = MagnusSettings()
+    assert s.agent_name == "Magnus"
+    assert s.gemini_model == "gemini-3.8-live"
+    assert check_magnus_wake_phrase("I am passing the mic to Magnus now!", s) is True
+    assert check_magnus_wake_phrase("Passing the mic to Team Red!", s) is False
+
+    m_client = TestClient(magnus_app)
+    ui_res = m_client.get("/")
+    assert ui_res.status_code == 200
+    assert "MAGNUS" in ui_res.text
+
+    state_res = m_client.get("/api/state")
+    assert state_res.status_code == 200
+    state_data = state_res.json()
+    assert state_data["settings"]["agent_name"] == "Magnus"
+    assert state_data["has_api_key"] is True
+    assert len(state_data["models"]) >= 4
+    assert len(state_data["voices"]) >= 5
+

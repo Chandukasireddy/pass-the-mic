@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MAGNUS — Gemini 3.8 Live Speech-to-Speech Control Center</title>
+  <style>
+    :root {
+      --bg-dark: #070b14;
+      --bg-card: #0f172a;
+      --bg-card-hover: #131e36;
+      --border: #1e293b;
+      --border-accent: #38bdf8;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --cyan: #38bdf8;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --purple: #a855f7;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #111c38 0%, var(--bg-dark) 70%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 18px 24px;
+      line-height: 1.5;
+    }
+
+    /* Header Bar */
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 20px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(12px);
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0284c7, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 800;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
+    }
+
+    .brand-title h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      background: linear-gradient(90deg, #38bdf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-title p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .status-badges {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #162038;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .badge.active .badge-dot {
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+    }
+
+    /* Main 3-Column Dashboard Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr 390px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    @media (max-width: 1280px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-header h2 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Center Stage Orb & Master Controls */
+    .orb-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 22px 16px;
+      text-align: center;
+      position: relative;
+    }
+
+    .orb-wrapper {
+      position: relative;
+      width: 148px;
+      height: 148px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .voice-orb {
+      width: 112px;
+      height: 112px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #38bdf8, #1d4ed8 65%, #0f172a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 38px;
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
+      transition: transform 0.12s ease, box-shadow 0.25s ease, background 0.3s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .voice-orb.state-LISTENING {
+      background: radial-gradient(circle at 35% 35%, #38bdf8, #0284c7 65%, #0f172a);
+      box-shadow: 0 0 42px rgba(56, 189, 248, 0.55);
+    }
+
+    .voice-orb.state-RECORDING_SPEECH {
+      background: radial-gradient(circle at 35% 35%, #fb7185, #e11d48 65%, #4c0519);
+      box-shadow: 0 0 55px rgba(244, 63, 94, 0.8);
+    }
+
+    .voice-orb.state-PROCESSING_S2S {
+      background: radial-gradient(circle at 35% 35%, #c084fc, #7c3aed 65%, #2e1065);
+      box-shadow: 0 0 50px rgba(168, 85, 247, 0.75);
+      animation: pulseSpin 1.4s infinite ease-in-out;
+    }
+
+    .voice-orb.state-SPEAKING {
+      background: radial-gradient(circle at 35% 35%, #34d399, #059669 65%, #064e3b);
+      box-shadow: 0 0 60px rgba(16, 185, 129, 0.85);
+      animation: speakingBeat 0.6s infinite alternate ease-in-out;
+    }
+
+    @keyframes pulseSpin {
+      0% { transform: scale(0.96); }
+      50% { transform: scale(1.06); }
+      100% { transform: scale(0.96); }
+    }
+
+    @keyframes speakingBeat {
+      from { transform: scale(1.0); }
+      to { transform: scale(1.1); }
+    }
+
+    .state-headline {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .state-subtext {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      min-height: 20px;
+    }
+
+    /* Live RMS Meter */
+    .rms-container {
+      width: 100%;
+      max-width: 440px;
+      margin-bottom: 18px;
+    }
+
+    .rms-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    .rms-bar-bg {
+      width: 100%;
+      height: 12px;
+      background: #090d16;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .rms-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #10b981, #38bdf8, #f43f5e);
+      border-radius: 999px;
+      transition: width 0.08s linear;
+    }
+
+    .rms-threshold-marker {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--amber);
+      z-index: 2;
+    }
+
+    /* Action Buttons */
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: #1e293b;
+      color: var(--text-main);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: #283548;
+      border-color: var(--cyan);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border-color: #38bdf8;
+      color: #fff;
+      padding: 12px 24px;
+      font-size: 0.95rem;
+      box-shadow: 0 4px 18px rgba(2, 132, 199, 0.4);
+    }
+
+    .btn-primary.listening-active {
+      background: linear-gradient(135deg, #e11d48, #be123c);
+      border-color: #fb7185;
+      box-shadow: 0 4px 18px rgba(225, 29, 72, 0.45);
+    }
+
+    .btn-emerald {
+      background: linear-gradient(135deg, #059669, #047857);
+      border-color: #34d399;
+      color: #fff;
+    }
+
+    /* Form Controls */
+    .form-group {
+      margin-bottom: 13px;
+    }
+
+    .form-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      background: #090e1a;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 0.84rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--cyan);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 74px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--cyan);
+      cursor: pointer;
+    }
+
+    /* Mode Selector Pills */
+    .mode-pills {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .mode-pill {
+      padding: 9px 6px;
+      text-align: center;
+      font-size: 0.76rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #090e1a;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+
+    .mode-pill.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--cyan);
+      color: var(--text-main);
+    }
+
+    /* Live Transcript Feed */
+    .transcript-list {
+      max-height: 360px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 4px;
+    }
+
+    .transcript-item {
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0a101f;
+      font-size: 0.85rem;
+    }
+
+    .transcript-item.magnus {
+      border-left: 4px solid var(--emerald);
+      background: rgba(16, 185, 129, 0.07);
+    }
+
+    .transcript-item.room {
+      border-left: 4px solid var(--cyan);
+    }
+
+    .transcript-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.73rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .prompt-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      font-size: 0.83rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">M</div>
+      <div class="brand-title">
+        <h1>MAGNUS — GEMINI 3.8 LIVE SPEECH-TO-SPEECH</h1>
+        <p>Autonomous Roundtable Voice Agent • Active Microphone Listening & Neural Speaker Output</p>
+      </div>
+    </div>
+    <div class="status-badges">
+      <div id="apiBadge" class="badge active">
+        <span class="badge-dot"></span>
+        <span id="apiStatusText">Loading Gemini API...</span>
+      </div>
+      <div class="badge">
+        <span>Turns Spoken:</span>
+        <strong id="turnsCount" style="color: var(--cyan);">0</strong>
+      </div>
+      <div id="stateBadge" class="badge">
+        <span>State:</span>
+        <strong id="stateBadgeText" style="color: var(--emerald);">IDLE</strong>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Control Center -->
+  <main class="dashboard-grid">
+
+    <!-- LEFT COLUMN: Gemini Model, Voice & Audio Hardware -->
+    <section>
+      <div class="card">
+        <div class="card-header">
+          <h2>🤖 1. Gemini Speech-to-Speech Model & Voice</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="geminiModel">Gemini Speech-to-Speech Model</label>
+          <select id="geminiModel" onchange="saveSettings()"></select>
+        </div>
+
+        <div class="form-group">
+          <label for="geminiVoice">Magnus Voice Profile</label>
+          <select id="geminiVoice" onchange="saveSettings()"></select>
+        </div>
+
+        <div class="form-group">
+          <label for="speechRate">Speaking Speed / Cadence</label>
+          <select id="speechRate" onchange="saveSettings()">
+            <option value="-10%">Measured & Deliberate (-10%)</option>
+            <option value="+0%" selected>Natural Grandmaster (+0%)</option>
+            <option value="+10%">Brisk & Energetic (+10%)</option>
+            <option value="+20%">Rapid Blitz (+20%)</option>
+          </select>
+        </div>
+
+        <div class="toggle-row">
+          <span>🔊 Laptop Speaker Output Enabled</span>
+          <input type="checkbox" id="speakerEnabled" checked onchange="saveSettings()" style="width:18px;height:18px;" />
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label for="apiKeyInput">
+            <span>Gemini API Key (.env loaded automatically)</span>
+          </label>
+          <div style="display:flex; gap:6px;">
+            <input type="password" id="apiKeyInput" placeholder="Paste new Gemini API key to hot-swap..." />
+            <button class="btn" onclick="updateApiKey()">Set</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>🎙️ 2. Active Listening & Mic Hardware</h2>
+        </div>
+
+        <label style="font-size:0.78rem;font-weight:600;color:#cbd5e1;display:block;margin-bottom:6px;">
+          Active Listening Trigger Mode
+        </label>
+        <div class="mode-pills">
+          <div class="mode-pill active" id="mode_wake_word" onclick="setListeningMode('wake_word')">
+            🎯 Wake-Word<br><span style="font-size:0.68rem;font-weight:400;">("Magnus")</span>
+          </div>
+          <div class="mode-pill" id="mode_always_on" onclick="setListeningMode('always_on')">
+            ♾️ Always On<br><span style="font-size:0.68rem;font-weight:400;">(1-on-1 Live S2S)</span>
+          </div>
+          <div class="mode-pill" id="mode_manual" onclick="setListeningMode('manual')">
+            🖐️ Manual<br><span style="font-size:0.68rem;font-weight:400;">(Button Only)</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="micDevice">Laptop Microphone Input Device</label>
+          <select id="micDevice" onchange="saveSettings()">
+            <option value="">Default OS Microphone</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <span>VAD Speech Energy Threshold</span>
+            <strong id="thresholdVal" style="color:var(--amber);">0.015</strong>
+          </label>
+          <input type="range" id="energyThreshold" min="0.005" max="0.080" step="0.001" value="0.015"
+                 oninput="document.getElementById('thresholdVal').innerText = this.value; updateThresholdMarker();"
+                 onchange="saveSettings()" />
+        </div>
+
+        <div class="form-group">
+          <label>
+            <span>Silence Duration to End Turn (sec)</span>
+            <strong id="silenceVal" style="color:var(--cyan);">1.6s</strong>
+          </label>
+          <input type="range" id="silenceDuration" min="0.8" max="3.5" step="0.1" value="1.6"
+                 oninput="document.getElementById('silenceVal').innerText = this.value + 's'"
+                 onchange="saveSettings()" />
+        </div>
+
+        <div class="form-group">
+          <label for="wakePhrases">Acoustic Wake Phrases (comma-separated)</label>
+          <input type="text" id="wakePhrases" onchange="saveSettings()" />
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER COLUMN: Live Voice Orb, Audio Visualizer & Transcript Stream -->
+    <section>
+      <div class="card orb-stage">
+        <div class="orb-wrapper">
+          <div id="voiceOrb" class="voice-orb" onclick="toggleActiveListening()" title="Click to toggle Active Listening">
+            🎙️
+          </div>
+        </div>
+
+        <div id="stateHeadline" class="state-headline">MAGNUS STANDING BY</div>
+        <div id="stateSubtext" class="state-subtext">
+          Click "Activate Active Listening" so Magnus listens through your laptop microphone
+        </div>
+
+        <!-- Live Microphone RMS Energy Meter -->
+        <div class="rms-container">
+          <div class="rms-labels">
+            <span>Mic Input Level: <strong id="rmsNumeric">0.000</strong></span>
+            <span>Orange Line = VAD Trigger Threshold</span>
+          </div>
+          <div class="rms-bar-bg">
+            <div id="rmsFill" class="rms-bar-fill"></div>
+            <div id="rmsMarker" class="rms-threshold-marker" style="left: 18%;"></div>
+          </div>
+        </div>
+
+        <!-- Primary Controls -->
+        <div class="btn-row">
+          <button id="listenBtn" class="btn btn-primary" onclick="toggleActiveListening()">
+            🎙️ Activate Active Listening
+          </button>
+          <button class="btn btn-emerald" onclick="triggerMagnusNow()">
+            ⚡ Force Magnus Turn Now
+          </button>
+          <button class="btn" onclick="testMagnusVoice()">
+            🔊 Test Voice
+          </button>
+          <button class="btn" onclick="calibrateMic()">
+            🎚️ Calibrate Room Mic
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Room & Magnus Speech-to-Speech Transcript -->
+      <div class="card">
+        <div class="card-header">
+          <h2>📡 Live Speech-to-Speech Room Transcript</h2>
+          <button class="btn" style="padding:5px 10px;font-size:0.75rem;" onclick="clearHistory()">
+            🗑️ Clear
+          </button>
+        </div>
+
+        <div id="transcriptList" class="transcript-list">
+          <div class="transcript-item" style="text-align:center;color:var(--text-muted);">
+            No voice turns recorded yet. Activate listening and say <strong>"Passing the mic to Magnus!"</strong>
+            or use the direct prompt bar below.
+          </div>
+        </div>
+
+        <div class="prompt-bar">
+          <input type="text" id="customPromptInput"
+                 placeholder="Type anything for Magnus to respond to out loud (or press Enter)..."
+                 onkeydown="if(event.key==='Enter') sendCustomPrompt()" />
+          <button class="btn btn-emerald" onclick="sendCustomPrompt()">
+            🔊 Speak Answer
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: Magnus Persona, Debate Topic & Roundtable Peers -->
+    <section>
+      <div class="card">
+        <div class="card-header">
+          <h2>♟️ 3. Magnus Persona & Roundtable Setup</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="agentName">Character Agent Name</label>
+          <input type="text" id="agentName" value="Magnus" onchange="saveSettings()" />
+        </div>
+
+        <div class="form-group">
+          <label for="presetTopicSelect">Quick-Select Curated Debate Topic</label>
+          <select id="presetTopicSelect" onchange="selectPresetTopic(this.value)">
+            <option value="">-- Choose a preset debate topic --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="topicInput">Active Debate Topic</label>
+          <textarea id="topicInput" rows="2" onchange="saveSettings()"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="personaInput">Magnus System Instruction / Persona</label>
+          <textarea id="personaInput" rows="4" onchange="saveSettings()"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="styleInput">Speaking Style & Delivery</label>
+          <input type="text" id="styleInput" onchange="saveSettings()" />
+        </div>
+
+        <div class="form-group">
+          <label for="peerTeams">Roundtable Peer Teams (to pass the mic to)</label>
+          <input type="text" id="peerTeams" onchange="saveSettings()" />
+        </div>
+
+        <div class="toggle-row">
+          <span>👉 Pass Mic to a Peer Team at End of Speech</span>
+          <input type="checkbox" id="passMicAtEnd" checked onchange="saveSettings()" style="width:18px;height:18px;" />
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="saveSettings(true)">
+          💾 Save & Apply All Configuration
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let isListening = false;
+    let currentListeningMode = "wake_word";
+    let ws = null;
+
+    async function loadInitialState() {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+
+      // Populate Models
+      const modelSel = document.getElementById('geminiModel');
+      modelSel.innerHTML = '';
+      data.models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        modelSel.appendChild(opt);
+      });
+
+      // Populate Voices
+      const voiceSel = document.getElementById('geminiVoice');
+      voiceSel.innerHTML = '';
+      data.voices.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.name;
+        voiceSel.appendChild(opt);
+      });
+
+      // Populate Microphones
+      const micSel = document.getElementById('micDevice');
+      micSel.innerHTML = '<option value="">Default System Microphone</option>';
+      (data.audio_devices.inputs || []).forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.index;
+        opt.textContent = `[#${d.index}] ${d.name}`;
+        micSel.appendChild(opt);
+      });
+
+      // Populate Preset Topics
+      const topicSel = document.getElementById('presetTopicSelect');
+      (data.preset_topics || []).forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t.length > 62 ? t.slice(0, 62) + '...' : t;
+        topicSel.appendChild(opt);
+      });
+
+      applySettingsToForm(data.settings);
+      updateStatusUI(data.state, data.is_listening, data.turns_completed, data.api_status);
+      renderHistory(data.transcript_history || []);
+      connectWebSocket();
+    }
+
+    function applySettingsToForm(s) {
+      document.getElementById('agentName').value = s.agent_name || 'Magnus';
+      document.getElementById('geminiModel').value = s.gemini_model || 'gemini-3.8-live';
+      document.getElementById('geminiVoice').value = s.gemini_voice || 'Charon';
+      document.getElementById('speechRate').value = s.speech_rate || '+0%';
+      document.getElementById('speakerEnabled').checked = s.speaker_enabled !== false;
+      document.getElementById('micDevice').value = s.mic_device_index !== null && s.mic_device_index !== undefined ? s.mic_device_index : '';
+      document.getElementById('energyThreshold').value = s.energy_threshold || 0.015;
+      document.getElementById('thresholdVal').innerText = s.energy_threshold || 0.015;
+      document.getElementById('silenceDuration').value = s.silence_duration || 1.6;
+      document.getElementById('silenceVal').innerText = (s.silence_duration || 1.6) + 's';
+      document.getElementById('wakePhrases').value = (s.wake_phrases || []).join(', ');
+      document.getElementById('topicInput').value = s.topic || '';
+      document.getElementById('personaInput').value = s.persona || '';
+      document.getElementById('styleInput').value = s.style || '';
+      document.getElementById('peerTeams').value = (s.peer_teams || []).join(', ');
+      document.getElementById('passMicAtEnd').checked = s.pass_mic_at_end !== false;
+
+      currentListeningMode = s.listening_mode || 'wake_word';
+      ['wake_word', 'always_on', 'manual'].forEach(m => {
+        const el = document.getElementById('mode_' + m);
+        if (el) el.classList.toggle('active', m === currentListeningMode);
+      });
+      updateThresholdMarker();
+    }
+
+    function updateThresholdMarker() {
+      const val = parseFloat(document.getElementById('energyThreshold').value) || 0.015;
+      const pct = Math.min(100, Math.max(2, (val / 0.08) * 100));
+      document.getElementById('rmsMarker').style.left = pct + '%';
+    }
+
+    function setListeningMode(mode) {
+      currentListeningMode = mode;
+      ['wake_word', 'always_on', 'manual'].forEach(m => {
+        document.getElementById('mode_' + m).classList.toggle('active', m === mode);
+      });
+      saveSettings();
+    }
+
+    function selectPresetTopic(val) {
+      if (!val) return;
+      document.getElementById('topicInput').value = val;
+      saveSettings();
+    }
+
+    async function saveSettings(showToast = false) {
+      const micVal = document.getElementById('micDevice').value;
+      const payload = {
+        agent_name: document.getElementById('agentName').value.trim() || 'Magnus',
+        gemini_model: document.getElementById('geminiModel').value,
+        gemini_voice: document.getElementById('geminiVoice').value,
+        speech_rate: document.getElementById('speechRate').value,
+        speaker_enabled: document.getElementById('speakerEnabled').checked,
+        listening_mode: currentListeningMode,
+        mic_device_index: micVal === '' ? null : parseInt(micVal, 10),
+        energy_threshold: parseFloat(document.getElementById('energyThreshold').value),
+        silence_duration: parseFloat(document.getElementById('silenceDuration').value),
+        wake_phrases: document.getElementById('wakePhrases').value.split(',').map(s => s.trim()).filter(Boolean),
+        topic: document.getElementById('topicInput').value.trim(),
+        persona: document.getElementById('personaInput').value.trim(),
+        style: document.getElementById('styleInput').value.trim(),
+        peer_teams: document.getElementById('peerTeams').value.split(',').map(s => s.trim()).filter(Boolean),
+        pass_mic_at_end: document.getElementById('passMicAtEnd').checked,
+      };
+
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.api_status) {
+        document.getElementById('apiStatusText').innerText = data.api_status;
+      }
+      if (showToast) {
+        document.getElementById('stateSubtext').innerText = '✔ Configuration saved and applied live!';
+      }
+    }
+
+    async function updateApiKey() {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (!key) return;
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: key }),
+      });
+      const data = await res.json();
+      document.getElementById('apiKeyInput').value = '';
+      document.getElementById('apiStatusText').innerText = data.api_status || 'API Key Updated';
+    }
+
+    async function toggleActiveListening() {
+      const endpoint = isListening ? '/api/listening/stop' : '/api/listening/start';
+      const res = await fetch(endpoint, { method: 'POST' });
+      const data = await res.json();
+      updateStatusUI(data.state, data.is_listening);
+    }
+
+    async function calibrateMic() {
+      document.getElementById('stateSubtext').innerText = 'Sampling 1 second of ambient room noise...';
+      const res = await fetch('/api/calibrate', { method: 'POST' });
+      const data = await res.json();
+      if (data.energy_threshold) {
+        document.getElementById('energyThreshold').value = data.energy_threshold;
+        document.getElementById('thresholdVal').innerText = data.energy_threshold;
+        updateThresholdMarker();
+        document.getElementById('stateSubtext').innerText = `✔ Calibrated room noise threshold to ${data.energy_threshold}`;
+      }
+    }
+
+    async function triggerMagnusNow() {
+      await fetch('/api/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: null }),
+      });
+    }
+
+    async function testMagnusVoice() {
+      await fetch('/api/test-voice', { method: 'POST' });
+    }
+
+    async function sendCustomPrompt() {
+      const input = document.getElementById('customPromptInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      await fetch('/api/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text }),
+      });
+    }
+
+    async function clearHistory() {
+      await fetch('/api/clear-history', { method: 'POST' });
+      renderHistory([]);
+      document.getElementById('turnsCount').innerText = '0';
+    }
+
+    function updateStatusUI(state, listeningFlag, turnsCompleted, apiStatus, detail) {
+      if (typeof listeningFlag === 'boolean') isListening = listeningFlag;
+      if (typeof turnsCompleted === 'number') {
+        document.getElementById('turnsCount').innerText = turnsCompleted;
+      }
+      if (apiStatus) {
+        document.getElementById('apiStatusText').innerText = apiStatus;
+      }
+
+      const orb = document.getElementById('voiceOrb');
+      orb.className = 'voice-orb state-' + (state || 'IDLE');
+
+      const btn = document.getElementById('listenBtn');
+      if (isListening) {
+        btn.classList.add('listening-active');
+        btn.innerHTML = '⏹️ Pause Active Listening';
+      } else {
+        btn.classList.remove('listening-active');
+        btn.innerHTML = '🎙️ Activate Active Listening';
+      }
+
+      document.getElementById('stateBadgeText').innerText = state || 'IDLE';
+
+      const headlines = {
+        IDLE: ['MAGNUS STANDING BY', '🎙️'],
+        LISTENING: ['ACTIVE LISTENING ON MICROPHONE', '👂'],
+        RECORDING_SPEECH: ['HEARING VOICE IN ROOM...', '🔴'],
+        PROCESSING_S2S: ['GEMINI SPEECH-TO-SPEECH THINKING...', '🧠'],
+        SPEAKING: ['MAGNUS SPEAKING OUT LOUD', '🔊'],
+      };
+      const [title, icon] = headlines[state] || headlines.IDLE;
+      document.getElementById('stateHeadline').innerText = title;
+      orb.innerText = icon;
+      if (detail) {
+        document.getElementById('stateSubtext').innerText = detail;
+      }
+    }
+
+    function appendTranscriptItem(entry) {
+      const container = document.getElementById('transcriptList');
+      if (container.querySelector('.transcript-item') && container.children.length === 1 && container.innerText.includes('No voice turns')) {
+        container.innerHTML = '';
+      }
+
+      const div = document.createElement('div');
+      if (entry.role === 'magnus') {
+        div.className = 'transcript-item magnus';
+        div.innerHTML = `
+          <div class="transcript-meta">
+            <span style="color:var(--emerald);">🔊 ${entry.speaker} (${entry.engine_used || 'Gemini S2S'})</span>
+            <span>${entry.timestamp || ''} • Passed Mic ➔ <strong>${entry.next_agent || 'Room'}</strong></span>
+          </div>
+          <div>"${entry.text}"</div>
+        `;
+      } else {
+        div.className = 'transcript-item room';
+        const wakeTag = entry.triggered_magnus
+          ? '<span style="color:var(--emerald);font-weight:700;">✔ Triggered Magnus</span>'
+          : '<span style="color:var(--text-muted);">Overheard in Room</span>';
+        div.innerHTML = `
+          <div class="transcript-meta">
+            <span style="color:var(--cyan);">👂 Heard on Microphone (${entry.duration || 0}s)</span>
+            <span>${entry.timestamp || ''} • ${wakeTag}</span>
+          </div>
+          <div>"${entry.text}"</div>
+        `;
+      }
+      container.prepend(div);
+    }
+
+    function renderHistory(items) {
+      const container = document.getElementById('transcriptList');
+      container.innerHTML = '';
+      if (!items.length) {
+        container.innerHTML = `
+          <div class="transcript-item" style="text-align:center;color:var(--text-muted);">
+            No voice turns recorded yet. Activate listening and say <strong>"Passing the mic to Magnus!"</strong>
+            or use the direct prompt bar below.
+          </div>
+        `;
+        return;
+      }
+      items.forEach(item => appendTranscriptItem(item));
+    }
+
+    function connectWebSocket() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === 'state_change') {
+          updateStatusUI(msg.state, msg.is_listening, msg.turns_completed, msg.api_status, msg.detail);
+        } else if (msg.type === 'mic_level') {
+          document.getElementById('rmsNumeric').innerText = msg.rms.toFixed(3);
+          const pct = Math.min(100, (msg.rms / 0.08) * 100);
+          document.getElementById('rmsFill').style.width = pct + '%';
+          if (isListening && msg.rms > 0.005) {
+            const scale = Math.min(1.18, 1 + msg.rms * 2.2);
+            document.getElementById('voiceOrb').style.transform = `scale(${scale})`;
+          } else {
+            document.getElementById('voiceOrb').style.transform = 'scale(1)';
+          }
+        } else if (msg.type === 'room_heard') {
+          appendTranscriptItem(msg.entry);
+        } else if (msg.type === 'magnus_speaking') {
+          appendTranscriptItem(msg.entry);
+          if (msg.api_status) {
+            document.getElementById('apiStatusText').innerText = msg.api_status;
+          }
+        } else if (msg.type === 'calibrated') {
+          document.getElementById('energyThreshold').value = msg.energy_threshold;
+          document.getElementById('thresholdVal').innerText = msg.energy_threshold;
+          updateThresholdMarker();
+        }
+      };
+
+      ws.onclose = () => {
+        setTimeout(connectWebSocket, 2000);
+      };
+    }
+
+    window.addEventListener('DOMContentLoaded', loadInitialState);
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+google-genai>=1.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+websockets>=13.0
+sounddevice>=0.5.0
+soundfile>=0.12.1
+SpeechRecognition>=3.10.0
+edge-tts>=7.0.0
+pygame>=2.6.0
+numpy>=1.26.0
+pydantic>=2.8.0
+python-dotenv>=1.0.1
