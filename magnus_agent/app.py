@@ -206,14 +206,47 @@ async def websocket_stream(ws: WebSocket):
         controller.unsubscribe(_send_event)
 
 
+def _ensure_port_available(host: str, port: int) -> int:
+    """Ensure the requested port is free; if occupied by a previous instance, free it or pick next available."""
+    import socket
+    import psutil
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex((host, port)) != 0:
+            return port
+
+    # Try to terminate a previous stale python magnus_agent instance holding the port
+    try:
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr and conn.laddr.port == port and conn.pid:
+                proc = psutil.Process(conn.pid)
+                cmdline = " ".join(proc.cmdline()).lower()
+                if "magnus_agent" in cmdline or "app.py" in cmdline:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                    return port
+    except Exception:
+        pass
+
+    # Fallback: find the next available port
+    for candidate in range(port + 1, port + 50):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex((host, candidate)) != 0:
+                return candidate
+    return port
+
+
 def main():
+    import threading
+
     parser = argparse.ArgumentParser(description="Run the Magnus Gemini Speech-to-Speech Web Control Center.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8050, help="Port number (default: 8050)")
     parser.add_argument("--open-browser", action="store_true", help="Automatically open browser on launch")
     args = parser.parse_args()
 
-    url = f"http://{args.host}:{args.port}"
+    active_port = _ensure_port_available(args.host, args.port)
+    url = f"http://{args.host}:{active_port}"
     print("=" * 72)
     print("  🎙️  MAGNUS — GEMINI 3.8 LIVE SPEECH-TO-SPEECH VOICE AGENT")
     print(f"  🌐 Web Control Center: {url}")
@@ -221,10 +254,13 @@ def main():
     print("=" * 72)
 
     if args.open_browser:
-        asyncio.get_event_loop().call_later(1.2, lambda: webbrowser.open(url))
+        t = threading.Timer(1.0, lambda: webbrowser.open(url))
+        t.daemon = True
+        t.start()
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(app, host=args.host, port=active_port, log_level="warning")
 
 
 if __name__ == "__main__":
     main()
+
