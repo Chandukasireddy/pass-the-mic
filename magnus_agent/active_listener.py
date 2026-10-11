@@ -1,4 +1,11 @@
-"""Real-time Active Microphone Listener, VAD Engine, and Speaker Output for Magnus."""
+"""Full-Duplex Active Microphone Listener, Voice Barge-In ('Stop' Interruption) & Speaker Engine for Magnus.
+
+Key Capabilities:
+1. Full-Duplex Active Listening: Continues listening on the microphone EVEN WHILE Magnus is speaking!
+2. Instant Voice Interruption ("Stop", "Wait", "Pause", "Quiet", "Mic Off"):
+   Saying "stop" while Magnus is talking immediately halts speaker playback mid-sentence.
+3. Instant UI Controls: Stop Speaking button, Mic ON/OFF toggle, and Full Emergency Stop.
+"""
 
 from __future__ import annotations
 
@@ -16,8 +23,12 @@ import pygame
 import sounddevice as sd
 import soundfile as sf
 
-from .gemini_live_engine import GeminiSpeechToSpeechEngine, SpeechToSpeechResult
-from .magnus_config import MagnusSettings, check_magnus_wake_phrase
+try:
+    from .gemini_live_engine import GeminiSpeechToSpeechEngine, SpeechToSpeechResult
+    from .magnus_config import MagnusSettings, check_magnus_wake_phrase, check_stop_command
+except ImportError:
+    from gemini_live_engine import GeminiSpeechToSpeechEngine, SpeechToSpeechResult
+    from magnus_config import MagnusSettings, check_magnus_wake_phrase, check_stop_command
 
 
 def _init_mixer() -> None:
@@ -59,7 +70,7 @@ def get_audio_devices() -> Dict[str, List[dict]]:
 
 
 class MagnusActiveController:
-    """Manages Magnus's continuous microphone active listening, S2S execution, and speaker output."""
+    """Manages Magnus's full-duplex active listening, voice barge-in ('stop'), and speaker output."""
 
     def __init__(self, settings: MagnusSettings, engine: GeminiSpeechToSpeechEngine):
         self.settings = settings
@@ -68,12 +79,14 @@ class MagnusActiveController:
         self.is_listening: bool = False
         self.state: str = "IDLE"  # IDLE | LISTENING | RECORDING_SPEECH | PROCESSING_S2S | SPEAKING
         self.current_rms: float = 0.0
-        self.is_speaking_lock: bool = False
+        self.is_currently_playing: bool = False
+        self.speech_interrupted: bool = False
         self.last_spoke_time: float = 0.0
         self.turns_completed: int = 0
         self.transcript_history: List[dict] = []
 
         self._listen_task: Optional[asyncio.Task] = None
+        self._active_turn_task: Optional[asyncio.Task] = None
         self._event_callbacks: List[Callable[[dict], Coroutine[Any, Any, None]]] = []
 
     def subscribe(self, callback: Callable[[dict], Coroutine[Any, Any, None]]) -> None:
@@ -97,12 +110,62 @@ class MagnusActiveController:
             "state": self.state,
             "detail": detail,
             "is_listening": self.is_listening,
+            "is_speaking": self.is_currently_playing,
             "turns_completed": self.turns_completed,
             "api_status": self.engine.last_api_status,
         })
 
+    async def interrupt_speech(self, reason: str = "Stopped by user") -> None:
+        """Immediately stop Magnus from speaking out loud mid-sentence."""
+        self.speech_interrupted = True
+        try:
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+        except Exception:
+            pass
+
+        self.is_currently_playing = False
+        self.last_spoke_time = time.time()
+
+        if self._active_turn_task and not self._active_turn_task.done():
+            self._active_turn_task.cancel()
+
+        next_state = "LISTENING" if self.is_listening else "IDLE"
+        await self.set_state(next_state, f"🛑 Speech stopped ({reason})")
+        await self.broadcast_event({
+            "type": "speech_interrupted",
+            "reason": reason,
+        })
+
+    async def stop_all_agent_activity(self) -> None:
+        """Turn microphone OFF and immediately stop any active speech or generation."""
+        self.speech_interrupted = True
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+        except Exception:
+            pass
+        self.is_currently_playing = False
+        await self.stop_active_listening()
+        await self.set_state("IDLE", "🔇 Microphone OFF & Agent Stopped")
+
+    async def handle_realtime_voice_command(self, transcript: str) -> bool:
+        """Check any real-time transcript for 'stop' or 'mic off' commands and act immediately."""
+        should_stop, should_mic_off = check_stop_command(transcript, self.settings)
+        if should_mic_off:
+            await self.interrupt_speech(reason=f"Voice command: '{transcript}'")
+            await self.stop_active_listening()
+            await self.set_state("IDLE", f"🔇 Mic turned OFF by voice ('{transcript}')")
+            return True
+        if should_stop:
+            await self.interrupt_speech(reason=f"Voice command: '{transcript}'")
+            return True
+        return False
+
     async def play_audio_on_speaker(self, file_path: Path, cleanup: bool = True) -> None:
-        """Play audio out loud on laptop speakers with half-duplex microphone lock."""
+        """Play Magnus's voice on speakers while keeping the Barge-In Listener active for 'stop'."""
         if not file_path or not file_path.exists():
             return
 
@@ -112,26 +175,117 @@ class MagnusActiveController:
             return
 
         _init_mixer()
-        self.is_speaking_lock = True
+        self.is_currently_playing = True
+        self.speech_interrupted = False
+
+        barge_in_task: Optional[asyncio.Task] = None
+        if self.settings.barge_in_enabled:
+            barge_in_task = asyncio.create_task(self._barge_in_monitor_while_speaking())
+
         try:
             pygame.mixer.music.load(str(file_path))
             pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                await asyncio.sleep(0.05)
+            while pygame.mixer.music.get_busy() and not self.speech_interrupted:
+                await asyncio.sleep(0.04)
         finally:
+            if barge_in_task and not barge_in_task.done():
+                barge_in_task.cancel()
+                try:
+                    await barge_in_task
+                except asyncio.CancelledError:
+                    pass
+
             try:
                 pygame.mixer.music.stop()
                 pygame.mixer.music.unload()
             except Exception:
                 pass
-            self.is_speaking_lock = False
+
+            self.is_currently_playing = False
             self.last_spoke_time = time.time()
+
             if cleanup:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.04)
                 try:
                     file_path.unlink(missing_ok=True)
                 except Exception:
                     pass
+
+    async def _barge_in_monitor_while_speaking(self) -> None:
+        """Full-duplex listener that monitors the microphone WHILE Magnus is speaking.
+        
+        If the user says 'stop', 'wait', 'pause', 'quiet', or 'mic off', it immediately
+        interrupts `pygame.mixer.music` mid-sentence!
+        """
+        sample_rate = 16000
+        chunk_samples = 1600  # 100ms
+        q: asyncio.Queue[np.ndarray] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _cb(indata: np.ndarray, frames: int, time_info: Any, status: Any) -> None:
+            loop.call_soon_threadsafe(q.put_nowait, indata.copy())
+
+        # Barge-in threshold sits slightly above ambient/speaker bleed so saying "Stop!" triggers cleanly
+        barge_threshold = max(0.025, self.settings.energy_threshold * 1.8)
+
+        try:
+            with sd.InputStream(
+                samplerate=sample_rate,
+                channels=1,
+                dtype="int16",
+                blocksize=chunk_samples,
+                device=self.settings.mic_device_index,
+                callback=_cb,
+            ):
+                voice_window: List[np.ndarray] = []
+                while self.is_currently_playing and not self.speech_interrupted:
+                    try:
+                        chunk = await asyncio.wait_for(q.get(), timeout=0.3)
+                    except asyncio.TimeoutError:
+                        continue
+
+                    rms = compute_rms(chunk)
+                    self.current_rms = round(rms, 4)
+
+                    if rms >= barge_threshold:
+                        voice_window.append(chunk)
+                        # After ~0.9s of voice activity while speaking, check if user said "stop"
+                        if len(voice_window) >= 9:
+                            fd, tmp_wav = tempfile.mkstemp(suffix=".wav", prefix="magnus_bargein_")
+                            os.close(fd)
+                            wav_path = Path(tmp_wav)
+                            sf.write(str(wav_path), np.concatenate(voice_window, axis=0), sample_rate, subtype="PCM_16")
+                            voice_window.clear()
+
+                            transcript = await self.engine.async_transcribe_wav(wav_path)
+                            wav_path.unlink(missing_ok=True)
+
+                            if transcript:
+                                stopped = await self.handle_realtime_voice_command(transcript)
+                                if stopped:
+                                    break
+                    else:
+                        if len(voice_window) >= 5:
+                            # Short burst finished (e.g. a quick word like "Stop!") — transcribe immediately!
+                            fd, tmp_wav = tempfile.mkstemp(suffix=".wav", prefix="magnus_bargein_")
+                            os.close(fd)
+                            wav_path = Path(tmp_wav)
+                            sf.write(str(wav_path), np.concatenate(voice_window, axis=0), sample_rate, subtype="PCM_16")
+                            voice_window.clear()
+
+                            transcript = await self.engine.async_transcribe_wav(wav_path)
+                            wav_path.unlink(missing_ok=True)
+
+                            if transcript:
+                                stopped = await self.handle_realtime_voice_command(transcript)
+                                if stopped:
+                                    break
+                        else:
+                            voice_window.clear()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     async def calibrate_microphone(self) -> float:
         """Sample 1 second of ambient noise and update settings.energy_threshold."""
@@ -165,7 +319,7 @@ class MagnusActiveController:
         if self.is_listening:
             return
         self.is_listening = True
-        await self.set_state("LISTENING", "Microphone actively monitoring room...")
+        await self.set_state("LISTENING", "🎙️ Microphone ON — Active listening & voice 'stop' interruption ready")
         self._listen_task = asyncio.create_task(self._continuous_listen_loop())
 
     async def stop_active_listening(self) -> None:
@@ -178,7 +332,7 @@ class MagnusActiveController:
             except asyncio.CancelledError:
                 pass
             self._listen_task = None
-        await self.set_state("IDLE", "Active listening paused")
+        await self.set_state("IDLE", "🔇 Microphone OFF — Active listening paused")
 
     async def _continuous_listen_loop(self) -> None:
         """Background loop that captures speech segments via VAD and triggers Magnus."""
@@ -187,12 +341,12 @@ class MagnusActiveController:
         chunk_samples = int(sample_rate * chunk_duration)
 
         while self.is_listening:
-            # Wait while speaker is playing or in 0.4s reverb cooldown
-            if self.is_speaking_lock or (time.time() - self.last_spoke_time) < 0.4:
-                await asyncio.sleep(0.1)
+            # If Magnus is currently playing audio, the _barge_in_monitor_while_speaking handles the mic
+            if self.is_currently_playing or (time.time() - self.last_spoke_time) < 0.25:
+                await asyncio.sleep(0.08)
                 continue
 
-            await self.set_state("LISTENING", "Waiting for voice activity on microphone...")
+            await self.set_state("LISTENING", "🎙️ Listening on microphone (say 'Magnus' to wake, or 'Stop' anytime)...")
 
             try:
                 wav_path, duration = await self._capture_single_utterance(sample_rate, chunk_samples)
@@ -200,18 +354,33 @@ class MagnusActiveController:
                 break
             except Exception as e:
                 await self.broadcast_event({"type": "error", "message": f"Microphone stream error: {e}"})
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(1.5)
                 continue
 
             if not self.is_listening or not wav_path:
                 continue
 
-            # Transcribe the captured utterance
             await self.set_state("PROCESSING_S2S", "Transcribing microphone audio...")
             transcript = await self.engine.async_transcribe_wav(wav_path)
 
             if not transcript:
                 wav_path.unlink(missing_ok=True)
+                continue
+
+            # First check if user spoke a stop / mic-off command
+            was_stop = await self.handle_realtime_voice_command(transcript)
+            if was_stop:
+                wav_path.unlink(missing_ok=True)
+                entry = {
+                    "role": "room",
+                    "speaker": "Voice Command",
+                    "text": f"🛑 {transcript}",
+                    "duration": duration,
+                    "triggered_magnus": False,
+                    "timestamp": time.strftime("%H:%M:%S"),
+                }
+                self.transcript_history.append(entry)
+                await self.broadcast_event({"type": "room_heard", "entry": entry})
                 continue
 
             woke = check_magnus_wake_phrase(transcript, self.settings)
@@ -230,10 +399,16 @@ class MagnusActiveController:
             })
 
             if woke and self.settings.listening_mode != "manual":
-                await self._execute_magnus_response(
-                    input_wav_path=wav_path,
-                    heard_transcript=transcript,
+                self._active_turn_task = asyncio.create_task(
+                    self._execute_magnus_response(
+                        input_wav_path=wav_path,
+                        heard_transcript=transcript,
+                    )
                 )
+                try:
+                    await self._active_turn_task
+                except asyncio.CancelledError:
+                    pass
             else:
                 wav_path.unlink(missing_ok=True)
 
@@ -265,9 +440,9 @@ class MagnusActiveController:
         )
 
         with stream:
-            while self.is_listening and not self.is_speaking_lock:
+            while self.is_listening and not self.is_currently_playing:
                 try:
-                    chunk = await asyncio.wait_for(q.get(), timeout=0.5)
+                    chunk = await asyncio.wait_for(q.get(), timeout=0.4)
                 except asyncio.TimeoutError:
                     continue
 
@@ -275,7 +450,6 @@ class MagnusActiveController:
                 self.current_rms = round(rms, 4)
                 tick_counter += 1
 
-                # Broadcast RMS meter update every 200ms
                 if tick_counter % 2 == 0:
                     await self.broadcast_event({
                         "type": "mic_level",
@@ -293,7 +467,7 @@ class MagnusActiveController:
                         speech_started = True
                         recorded.extend(pre_buffer)
                         silence_chunks = 0
-                        await self.set_state("RECORDING_SPEECH", "Hearing voice in room — recording...")
+                        await self.set_state("RECORDING_SPEECH", "🔴 Hearing voice — recording until pause...")
                 else:
                     recorded.append(chunk)
                     if rms < self.settings.energy_threshold:
@@ -322,11 +496,12 @@ class MagnusActiveController:
         input_wav_path: Optional[Path] = None,
         heard_transcript: str = "",
         text_prompt_override: Optional[str] = None,
-    ) -> SpeechToSpeechResult:
+    ) -> Optional[SpeechToSpeechResult]:
         """Run Gemini Speech-to-Speech generation and play Magnus's voice out loud."""
+        self.speech_interrupted = False
         await self.set_state(
             "PROCESSING_S2S",
-            f"Magnus reasoning via {self.settings.gemini_model}...",
+            f"🧠 Magnus thinking via {self.settings.gemini_model}...",
         )
 
         try:
@@ -341,6 +516,11 @@ class MagnusActiveController:
             if input_wav_path and input_wav_path.exists():
                 input_wav_path.unlink(missing_ok=True)
 
+        if self.speech_interrupted:
+            if result.audio_file_path:
+                result.audio_file_path.unlink(missing_ok=True)
+            return None
+
         self.turns_completed += 1
         magnus_entry = {
             "role": "magnus",
@@ -353,7 +533,10 @@ class MagnusActiveController:
         }
         self.transcript_history.append(magnus_entry)
 
-        await self.set_state("SPEAKING", f"{self.settings.agent_name} speaking out loud...")
+        await self.set_state(
+            "SPEAKING",
+            f"🔊 {self.settings.agent_name} speaking (Say 'STOP' or click Stop to interrupt!)",
+        )
         await self.broadcast_event({
             "type": "magnus_speaking",
             "entry": magnus_entry,
@@ -363,18 +546,22 @@ class MagnusActiveController:
         if result.audio_file_path:
             await self.play_audio_on_speaker(result.audio_file_path, cleanup=True)
 
-        next_state = "LISTENING" if self.is_listening else "IDLE"
-        await self.set_state(next_state, f"Turn complete — passed mic to {result.next_agent}")
+        if not self.speech_interrupted:
+            next_state = "LISTENING" if self.is_listening else "IDLE"
+            await self.set_state(next_state, f"✔ Finished speaking — passed mic to {result.next_agent}")
         return result
 
-    async def trigger_manual_turn(self, custom_prompt: Optional[str] = None) -> SpeechToSpeechResult:
+    async def trigger_manual_turn(self, custom_prompt: Optional[str] = None) -> Optional[SpeechToSpeechResult]:
         """Immediately trigger Magnus to speak from the Web UI."""
         last_room = ""
         for item in reversed(self.transcript_history):
             if item.get("role") == "room":
                 last_room = item.get("text", "")
                 break
-        return await self._execute_magnus_response(
-            heard_transcript=last_room,
-            text_prompt_override=custom_prompt,
+        self._active_turn_task = asyncio.create_task(
+            self._execute_magnus_response(
+                heard_transcript=last_room,
+                text_prompt_override=custom_prompt,
+            )
         )
+        return await self._active_turn_task

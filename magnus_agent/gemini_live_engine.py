@@ -28,7 +28,10 @@ import speech_recognition as sr
 from google import genai
 from google.genai import types
 
-from .magnus_config import GEMINI_VOICES, MagnusSettings, load_gemini_api_key_from_env
+try:
+    from .magnus_config import GEMINI_VOICES, MagnusSettings, load_gemini_api_key_from_env
+except ImportError:
+    from magnus_config import GEMINI_VOICES, MagnusSettings, load_gemini_api_key_from_env
 
 logger = logging.getLogger("magnus.gemini_live")
 

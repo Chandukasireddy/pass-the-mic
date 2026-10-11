@@ -1,10 +1,10 @@
-"""FastAPI + WebSocket Backend Server for Magnus (Gemini Speech-to-Speech Voice Agent).
+"""Isolated FastAPI + WebSocket Backend Server for Magnus (Gemini Speech-to-Speech Voice Agent).
 
-Run with:
-    python magnus_agent/app.py
-or from inside `magnus_agent/`:
-    python app.py
-Then open http://localhost:8050 in your browser!
+Can be run directly from inside `magnus_agent/`:
+    cd magnus_agent
+    python app.py --open-browser
+or from the project root:
+    python magnus_agent/app.py --open-browser
 """
 
 from __future__ import annotations
@@ -14,13 +14,16 @@ import asyncio
 import json
 import logging
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+MAGNUS_DIR = Path(__file__).resolve().parent
+if str(MAGNUS_DIR) not in sys.path:
+    sys.path.insert(0, str(MAGNUS_DIR))
+if str(MAGNUS_DIR.parent) not in sys.path:
+    sys.path.insert(0, str(MAGNUS_DIR.parent))
 
 if sys.platform == "win32":
     try:
@@ -34,26 +37,35 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 import uvicorn
 
-from magnus_agent.active_listener import MagnusActiveController, get_audio_devices
-from magnus_agent.gemini_live_engine import GeminiSpeechToSpeechEngine
-from magnus_agent.magnus_config import (
-    GEMINI_VOICES,
-    GEMINI_VOICE_MODELS,
-    PRESET_TOPICS,
-    MagnusSettings,
-)
+try:
+    from .active_listener import MagnusActiveController, get_audio_devices
+    from .gemini_live_engine import GeminiSpeechToSpeechEngine
+    from .magnus_config import (
+        GEMINI_VOICES,
+        GEMINI_VOICE_MODELS,
+        PRESET_TOPICS,
+        MagnusSettings,
+    )
+except ImportError:
+    from active_listener import MagnusActiveController, get_audio_devices
+    from gemini_live_engine import GeminiSpeechToSpeechEngine
+    from magnus_config import (
+        GEMINI_VOICES,
+        GEMINI_VOICE_MODELS,
+        PRESET_TOPICS,
+        MagnusSettings,
+    )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("magnus.server")
 
 app = FastAPI(title="Magnus — Gemini 3.8 Live Speech-to-Speech Control Center")
 
-# Global singletons
 settings = MagnusSettings()
 engine = GeminiSpeechToSpeechEngine()
 controller = MagnusActiveController(settings=settings, engine=engine)
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = MAGNUS_DIR / "static"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -70,6 +82,7 @@ async def get_full_state():
     return {
         "settings": controller.settings.model_dump(),
         "is_listening": controller.is_listening,
+        "is_speaking": controller.is_currently_playing,
         "state": controller.state,
         "turns_completed": controller.turns_completed,
         "api_status": engine.last_api_status,
@@ -91,7 +104,9 @@ class SettingsUpdatePayload(BaseModel):
     gemini_voice: Optional[str] = None
     fallback_edge_voice: Optional[str] = None
     listening_mode: Optional[str] = None
+    barge_in_enabled: Optional[bool] = None
     wake_phrases: Optional[List[str]] = None
+    stop_phrases: Optional[List[str]] = None
     peer_teams: Optional[List[str]] = None
     pass_mic_at_end: Optional[bool] = None
     topic: Optional[str] = None
@@ -117,7 +132,6 @@ async def update_settings(payload: SettingsUpdatePayload):
         if v is not None or k == "mic_device_index":
             current_dict[k] = v
 
-    # Sync fallback edge voice when gemini_voice changes
     if "gemini_voice" in data and "fallback_edge_voice" not in data:
         for v_info in GEMINI_VOICES:
             if v_info["id"].lower() == str(data["gemini_voice"]).lower():
@@ -139,16 +153,30 @@ async def update_settings(payload: SettingsUpdatePayload):
 
 @app.post("/api/listening/start")
 async def start_listening():
-    """Start continuous microphone active listening."""
+    """Turn Microphone ON and start active listening."""
     await controller.start_active_listening()
     return {"status": "started", "is_listening": controller.is_listening, "state": controller.state}
 
 
 @app.post("/api/listening/stop")
 async def stop_listening():
-    """Stop continuous microphone active listening."""
+    """Turn Microphone OFF and pause active listening."""
     await controller.stop_active_listening()
     return {"status": "stopped", "is_listening": controller.is_listening, "state": controller.state}
+
+
+@app.post("/api/stop-speaking")
+async def stop_speaking():
+    """Immediately interrupt and stop Magnus from speaking mid-sentence."""
+    await controller.interrupt_speech(reason="Stopped via Stop button / voice interrupt")
+    return {"status": "speech_stopped", "is_listening": controller.is_listening, "state": controller.state}
+
+
+@app.post("/api/stop-agent")
+async def stop_agent_completely():
+    """Turn Microphone OFF and immediately halt all speech & agent activity."""
+    await controller.stop_all_agent_activity()
+    return {"status": "agent_stopped", "is_listening": False, "state": "IDLE"}
 
 
 @app.post("/api/calibrate")
@@ -174,7 +202,7 @@ async def test_magnus_voice():
     """Play a quick speaker test line as Magnus."""
     test_line = (
         f"Greetings. I am {controller.settings.agent_name}, running on {controller.settings.gemini_model} "
-        f"with the {controller.settings.gemini_voice} voice profile. My active microphone listener is ready."
+        f"with the {controller.settings.gemini_voice} voice. You can say Stop at any time to interrupt me."
     )
     asyncio.create_task(controller.trigger_manual_turn(custom_prompt=f"Say this exact greeting: {test_line}"))
     return {"status": "testing_voice"}
@@ -190,7 +218,7 @@ async def clear_history():
 
 @app.websocket("/ws")
 async def websocket_stream(ws: WebSocket):
-    """Real-time telemetry WebSocket pushing mic RMS levels, state transitions, and transcripts."""
+    """Real-time bidirectional WebSocket for telemetry and instant voice-stop commands."""
     await ws.accept()
 
     async def _send_event(event: Dict[str, Any]) -> None:
@@ -199,7 +227,20 @@ async def websocket_stream(ws: WebSocket):
     controller.subscribe(_send_event)
     try:
         while True:
-            await ws.receive_text()
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+                msg_type = msg.get("type")
+                if msg_type == "stop_speaking":
+                    await controller.interrupt_speech(reason=msg.get("reason", "Voice Stop"))
+                elif msg_type == "stop_agent":
+                    await controller.stop_all_agent_activity()
+                elif msg_type == "voice_command_check":
+                    text = msg.get("text", "")
+                    if text:
+                        await controller.handle_realtime_voice_command(text)
+            except Exception:
+                pass
     except WebSocketDisconnect:
         pass
     finally:
@@ -215,7 +256,6 @@ def _ensure_port_available(host: str, port: int) -> int:
         if s.connect_ex((host, port)) != 0:
             return port
 
-    # Try to terminate a previous stale python magnus_agent instance holding the port
     try:
         for conn in psutil.net_connections(kind="inet"):
             if conn.laddr and conn.laddr.port == port and conn.pid:
@@ -228,7 +268,6 @@ def _ensure_port_available(host: str, port: int) -> int:
     except Exception:
         pass
 
-    # Fallback: find the next available port
     for candidate in range(port + 1, port + 50):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex((host, candidate)) != 0:
@@ -237,8 +276,6 @@ def _ensure_port_available(host: str, port: int) -> int:
 
 
 def main():
-    import threading
-
     parser = argparse.ArgumentParser(description="Run the Magnus Gemini Speech-to-Speech Web Control Center.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8050, help="Port number (default: 8050)")
@@ -249,6 +286,7 @@ def main():
     url = f"http://{args.host}:{active_port}"
     print("=" * 72)
     print("  🎙️  MAGNUS — GEMINI 3.8 LIVE SPEECH-TO-SPEECH VOICE AGENT")
+    print(f"  📂 Isolated Folder:    {MAGNUS_DIR}")
     print(f"  🌐 Web Control Center: {url}")
     print(f"  🔑 API Status:         {engine.last_api_status}")
     print("=" * 72)
@@ -263,4 +301,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

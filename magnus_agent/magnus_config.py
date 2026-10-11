@@ -1,26 +1,21 @@
-"""Configuration, Model Registry, and .env Key Loader for Magnus (Gemini Speech-to-Speech Agent)."""
+"""Isolated Configuration, Model Registry, Stop-Command Detector & .env Loader for Magnus."""
 
 from __future__ import annotations
 
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
+
+MAGNUS_DIR = Path(__file__).resolve().parent
 
 
 def load_gemini_api_key_from_env() -> str:
-    """Load the Gemini API key from environment or .env files (supports `Gemini-API_KEY` and `GEMINI_API_KEY`)."""
-    # Check existing environment variables first
-    for env_key in ("GEMINI_API_KEY", "Gemini-API_KEY", "GOOGLE_API_KEY"):
-        val = os.environ.get(env_key)
-        if val and val.strip() and not val.startswith("your_"):
-            return val.strip()
-
-    # Check both local folder .env and parent project .env
+    """Load the Gemini API key directly from `magnus_agent/.env` (with fallback to parent `.env`)."""
     candidates = [
-        Path(__file__).resolve().parent / ".env",
-        Path(__file__).resolve().parent.parent / ".env",
+        MAGNUS_DIR / ".env",
+        MAGNUS_DIR.parent / ".env",
     ]
     for env_path in candidates:
         if env_path.exists():
@@ -36,13 +31,17 @@ def load_gemini_api_key_from_env() -> str:
                     if k_clean.lower() in ("gemini-api_key", "gemini_api_key", "google_api_key"):
                         if v_clean and not v_clean.startswith("your_"):
                             os.environ["GEMINI_API_KEY"] = v_clean
-                            return v_clean
             except Exception:
                 pass
+
+    for env_key in ("GEMINI_API_KEY", "Gemini-API_KEY", "GOOGLE_API_KEY"):
+        val = os.environ.get(env_key)
+        if val and val.strip() and not val.startswith("your_"):
+            return val.strip()
+
     return ""
 
 
-# Latest Gemini Speech-to-Speech & Native Audio Models
 GEMINI_VOICE_MODELS: List[Dict[str, str]] = [
     {
         "id": "gemini-3.8-live",
@@ -76,7 +75,6 @@ GEMINI_VOICE_MODELS: List[Dict[str, str]] = [
     },
 ]
 
-# Gemini Native Prebuilt Voices
 GEMINI_VOICES: List[Dict[str, str]] = [
     {
         "id": "Charon",
@@ -140,6 +138,10 @@ class MagnusSettings(BaseModel):
     # - "always_on": Responds to every spoken utterance heard on the microphone (1-on-1 live voice chat)
     # - "manual": Only speaks when triggered from the Web UI
     listening_mode: str = Field(default="wake_word")
+    barge_in_enabled: bool = Field(
+        default=True,
+        description="Full-duplex active listening: keeps listening while speaking so saying 'stop' interrupts Magnus immediately",
+    )
     wake_phrases: List[str] = Field(
         default_factory=lambda: [
             "magnus",
@@ -148,6 +150,20 @@ class MagnusSettings(BaseModel):
             "passing the mic to magnus",
             "over to magnus",
             "hey magnus",
+        ]
+    )
+    stop_phrases: List[str] = Field(
+        default_factory=lambda: [
+            "stop",
+            "stop magnus",
+            "magnus stop",
+            "pause",
+            "quiet",
+            "wait",
+            "hold on",
+            "enough",
+            "cancel",
+            "mute",
         ]
     )
     peer_teams: List[str] = Field(
@@ -161,13 +177,12 @@ class MagnusSettings(BaseModel):
     # Microphone & Speaker Hardware Settings
     mic_device_index: Optional[int] = Field(default=None)
     energy_threshold: float = Field(default=0.015)
-    silence_duration: float = Field(default=1.6)
+    silence_duration: float = Field(default=1.5)
     max_record_seconds: float = Field(default=25.0)
     speaker_enabled: bool = Field(default=True)
     speech_rate: str = Field(default="+0%")
 
 
-# Phonetic / STT homophones for "Magnus" so microphone wake detection is ultra-reliable
 MAGNUS_HOMOPHONES = [
     "magnus",
     "magness",
@@ -178,10 +193,51 @@ MAGNUS_HOMOPHONES = [
     "team magnus",
 ]
 
+MIC_OFF_PHRASES = [
+    "mic off",
+    "microphone off",
+    "turn off mic",
+    "stop listening",
+    "deactivate magnus",
+]
+
+
+def check_stop_command(transcript: str, settings: MagnusSettings) -> Tuple[bool, bool]:
+    """Check if a spoken transcript contains a voice stop/interrupt command.
+    
+    Returns:
+        Tuple of (should_stop_speaking, should_turn_mic_off)
+    """
+    if not transcript or not transcript.strip():
+        return False, False
+
+    clean = re.sub(r"[^\w\s]", " ", transcript.lower())
+    clean = re.sub(r"\s+", " ", clean).strip()
+
+    # Check if user explicitly asked to turn the mic off / stop listening
+    for phrase in MIC_OFF_PHRASES:
+        if phrase in clean:
+            return True, True
+
+    # Check if user said "stop", "stop magnus", "pause", "wait", "hold on", etc.
+    for phrase in settings.stop_phrases:
+        p_clean = phrase.lower().strip()
+        if not p_clean:
+            continue
+        if re.search(r"\b" + re.escape(p_clean) + r"\b", clean):
+            return True, False
+
+    return False, False
+
 
 def check_magnus_wake_phrase(transcript: str, settings: MagnusSettings) -> bool:
     """Return True if the microphone transcript triggers Magnus to speak."""
     if not transcript or not transcript.strip():
+        return False
+
+    # Never trigger a new response if the utterance was a "stop" command!
+    stop_speaking, _ = check_stop_command(transcript, settings)
+    if stop_speaking:
         return False
 
     if settings.listening_mode == "always_on":
@@ -190,13 +246,11 @@ def check_magnus_wake_phrase(transcript: str, settings: MagnusSettings) -> bool:
     clean = re.sub(r"[^\w\s]", " ", transcript.lower())
     clean = re.sub(r"\s+", " ", clean).strip()
 
-    # Check user-configured wake phrases
     for phrase in settings.wake_phrases:
         p_clean = phrase.lower().strip()
         if p_clean and p_clean in clean:
             return True
 
-    # Check phonetic homophones for Magnus
     for alias in MAGNUS_HOMOPHONES:
         if re.search(r"\b" + re.escape(alias) + r"\b", clean):
             return True

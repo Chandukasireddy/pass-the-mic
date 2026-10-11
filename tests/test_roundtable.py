@@ -141,19 +141,29 @@ def test_server_rest_endpoints():
 def test_magnus_agent_config_and_web_endpoints():
     from magnus_agent.app import app as magnus_app
     from magnus_agent.magnus_config import (
+        MAGNUS_DIR,
         MagnusSettings,
         check_magnus_wake_phrase,
+        check_stop_command,
         load_gemini_api_key_from_env,
     )
 
+    assert (MAGNUS_DIR / ".env").exists()
     key = load_gemini_api_key_from_env()
     assert isinstance(key, str) and len(key) > 5
 
     s = MagnusSettings()
     assert s.agent_name == "Magnus"
     assert s.gemini_model == "gemini-3.8-live"
+    assert s.barge_in_enabled is True
     assert check_magnus_wake_phrase("I am passing the mic to Magnus now!", s) is True
     assert check_magnus_wake_phrase("Passing the mic to Team Red!", s) is False
+
+    # Test voice stop & mic-off command detection
+    assert check_stop_command("Stop Magnus!", s) == (True, False)
+    assert check_stop_command("Wait hold on a second", s) == (True, False)
+    assert check_stop_command("Turn mic off now", s) == (True, True)
+    assert check_magnus_wake_phrase("Stop Magnus!", s) is False
 
     m_client = TestClient(magnus_app)
     ui_res = m_client.get("/")
@@ -167,4 +177,10 @@ def test_magnus_agent_config_and_web_endpoints():
     assert state_data["has_api_key"] is True
     assert len(state_data["models"]) >= 4
     assert len(state_data["voices"]) >= 5
+
+    stop_spk_res = m_client.post("/api/stop-speaking")
+    assert stop_spk_res.status_code == 200
+    stop_ag_res = m_client.post("/api/stop-agent")
+    assert stop_ag_res.status_code == 200
+
 
