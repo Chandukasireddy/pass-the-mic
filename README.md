@@ -1,47 +1,45 @@
-# 🎙️ pass-the-mic: Multi-Agent Voice Roundtable
+# 🎙️ pass-the-mic: Multi-Agent Voice Roundtable (Speaker 🔊 + Microphone 🎙️ Edition)
 
-A clean, production-ready Python repository for running live, in-person multi-agent voice roundtable debates across laptops on a local Wi-Fi network.
+A clean, production-ready Python repository for running live, in-person multi-agent voice roundtable debates where **laptops talk out loud through their physical Speakers and listen to each other through their physical Microphones** — no Wi-Fi coordination required!
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                        PASS-THE-MIC TOPOLOGY                           │
-│                                                                        │
-│   ┌─────────────────────┐              ┌───────────────────────┐       │
-│   │   HOST MODERATOR    │              │     TEAM ORANGE       │       │
-│   │   ("Team Black")    │              │   (Tech Optimist)     │       │
-│   │   Coordinator + WS  │              │  Edge-TTS + Speakers  │       │
-│   └──────────┬──────────┘              └───────────▲───────────┘       │
-│              │                                     │                   │
-│              │ 1. Introduces Topic                 │                   │
-│              │    & Calls Team Orange              │ 2. Speaks aloud & │
-│              ▼                                     │    Passes to Red  │
-│   ┌────────────────────────────────────────────────┼───────────────┐   │
-│   │        Local Wi-Fi WebSocket Coordinator Server (FastAPI)      │   │
-│   └────────────────────────────────────────────────┬───────────────┘   │
-│                                                    │                   │
-│                               3. Activates Red ────┘                   │
-│                                                    ▼                   │
-│                                        ┌───────────────────────┐       │
-│                                        │       TEAM RED        │       │
-│                                        │  (Pragmatic Skeptic)  │       │
-│                                        │  Edge-TTS + Speakers  │       │
-│                                        └───────────────────────┘       │
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                   PASS-THE-MIC ACOUSTIC TOPOLOGY                           │
+│           (Sound Waves in the Room = The Communication Network!)           │
+│                                                                            │
+│   ┌──────────────────────┐                     ┌───────────────────────┐   │
+│   │    HOST MODERATOR    │   🔊 Sound Waves    │      TEAM ORANGE      │   │
+│   │    ("Team Black")    │ ──────────────────► │    (Tech Optimist)    │   │
+│   │  Speaker 🔊 + Mic 🎙️  │ "Passing the mic    │  Mic 🎙️ hears wake word│   │
+│   └──────────▲───────────┘   to Team Orange!"  └───────────┬───────────┘   │
+│              │                                             │               │
+│              │                                             │ 🔊 Speaks out │
+│              │ 3. Moderator Mic 🎙️                         │    loud & says│
+│              │    monitors room &                          │  "Passing the │
+│              │    wraps up debate                          │   mic to Red!"│
+│              │                                             ▼               │
+│              │                                 ┌───────────────────────┐   │
+│              └──────────────────────────────── │       TEAM RED        │   │
+│                     🔊 Sound Waves             │  (Pragmatic Skeptic)  │   │
+│               "Passing the mic to Team Blue!"  │  Mic 🎙️ wakes & speaks │   │
+│                                                └───────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 🌟 1. Project Vision & Meetup Dynamics
 
-**Pass-The-Mic** turns any room of developers into a high-energy, autonomous voice roundtable:
+**Pass-The-Mic** turns a table of laptops into an autonomous, over-the-air voice roundtable where laptops literally converse out loud across the room:
 
-1. **The Host (Repository Owner)** runs the **Moderator Agent** ("Team Black"). The host's machine hosts the central coordination server, selects the debate topic, introduces the rules in an authoritative broadcast voice, manages turns, monitors latency, and keeps time.
-2. **Meetup Attendees** clone this repository and go straight to the [`character_agents/`](file:///k:/Tech/Projects/pass-the-mic/character_agents) folder. This is their modular workshop template to craft a personalized voice agent (e.g., "Team Orange", "Team Red", "Team Blue"), pick a persona, choose a neural voice, test it locally on their laptop speakers, and connect to the host.
-3. **The Turn-Taking Mechanic:**
-   - **Moderator** introduces the topic: *"Team Orange, what is your stance on this?"*
-   - **Team Orange's** laptop triggers its LLM, speaks out loud via its own speakers, and ends with: *"I believe open-source will accelerate, but I'm passing the mic to Team Red to hear their perspective on safety."*
-   - The Moderator's coordinator server detects the mic pass and immediately activates **Team Red's** laptop.
-   - The cycle continues until the round limit is reached, whereupon the Moderator synthesizes the debate points and wraps up the session.
+1. **The Host (Repository Owner)** runs the **Moderator Agent** ("Team Black") via [`moderator/run_moderator.py`](file:///k:/Tech/Projects/pass-the-mic/moderator/run_moderator.py). The host's laptop speaks the debate topic out loud through its **Speaker** in an authoritative broadcast voice, calls on the first team (*"Passing the mic to Team Orange!"*), and then switches its **Microphone** on to listen to the room, keep time, and intervene out loud if a handoff is missed.
+2. **Meetup Attendees** clone this repository and go straight to [`character_agents/`](file:///k:/Tech/Projects/pass-the-mic/character_agents). Each attendee picks a persona (e.g., **Team Orange**, **Team Red**, **Team Blue**), chooses a neural voice, tests their laptop speaker & microphone locally, and runs [`run_my_agent.py`](file:///k:/Tech/Projects/pass-the-mic/character_agents/run_my_agent.py).
+3. **The Acoustic Turn-Taking Mechanic (Speaker 🔊 ➔ Air 🌊 ➔ Microphone 🎙️):**
+   - Every attendee laptop continuously listens to the room through its **Microphone** using Voice Activity Detection (VAD) and Speech-to-Text (`core/stt.py`).
+   - **Moderator's Speaker** announces: *"Welcome to Pass-The-Mic! ... Passing the mic to Team Orange!"*
+   - **Team Orange's Microphone** hears *"Passing the mic to Team Orange"*, wakes up, feeds what it heard into its LLM, and **speaks out loud through its Speaker**, ending with: *"I believe open-source will win, and I'm passing the mic to Team Red!"*
+   - **Team Red's Microphone** hears Team Orange's argument and the wake phrase *"passing the mic to Team Red"*, wakes up, and speaks its counter-argument out loud through its own **Speaker**!
+   - **Half-Duplex Self-Mute:** While a laptop's speaker is talking, its own microphone is automatically locked (with a `0.35s` reverb cooldown) so it never hears its own voice.
 
 ---
 
@@ -49,30 +47,32 @@ A clean, production-ready Python repository for running live, in-person multi-ag
 
 ```
 pass-the-mic/
-├── README.md                      # Overview of the project & meetup guide
-├── requirements.txt              # Shared lightweight dependencies (FastAPI, uvicorn, edge-tts, pygame, groq)
-├── .env.example                  # GROQ_API_KEY / OPENAI_API_KEY
-├── simulate_roundtable.py        # [HOST TEST] Runs 1 Moderator + 2 Sample Characters on ONE laptop
+├── README.md                      # Overview of the acoustic Speaker + Mic architecture & meetup guide
+├── requirements.txt              # Lightweight dependencies (edge-tts, pygame, sounddevice, SpeechRecognition, groq)
+├── .env.example                  # GROQ_API_KEY / Mic VAD & STT settings
+├── simulate_roundtable.py        # [HOST TEST] Simulates 1 Moderator + 2-3 Characters on ONE laptop
 │
-├── core/                         # Shared utilities used by both Host and Characters
+├── core/                         # Shared audio, speech, and LLM utilities
 │   ├── __init__.py
-│   ├── llm.py                    # Fast LLM client (Groq Llama-3 free tier, with OpenAI & Mock fallback)
-│   ├── tts.py                    # Voice generator (edge-tts by default — 100% free, no API key needed)
-│   ├── audio.py                  # Clean audio playback using pygame (blocking & async)
-│   └── protocol.py               # JSON schema for mic-passing (speaker, text, next_agent)
+│   ├── llm.py                    # Fast LLM client (Groq Llama-3 free tier, OpenAI & Mock fallback)
+│   ├── tts.py                    # Mouth: Voice generator (edge-tts — 100% free, zero API keys needed)
+│   ├── stt.py                    # Ears: Speech-to-Text (Groq Whisper + 100% free Google Web Speech API)
+│   ├── audio.py                  # Speaker playback (pygame) + Microphone VAD recording (sounddevice)
+│   └── protocol.py               # Acoustic wake-word/homophone detector + JSON schema for mic-passing
 │
 ├── moderator/                    # [HOST CORE] Main engine run by the meetup host
 │   ├── __init__.py
-│   ├── server.py                 # FastAPI + WebSocket server coordinating turns over local Wi-Fi
-│   ├── moderator_agent.py        # The Host's Voice Agent (introduces topic, summarizes, intervenes)
-│   ├── dashboard.py              # Pretty terminal UI (using rich) showing connected teams and active speaker
+│   ├── run_moderator.py          # Acoustic Host runner (Speaks intro on Speaker, listens to room on Mic)
+│   ├── moderator_agent.py        # The Host's Voice Agent (introduces topic, listens, intervenes, summarizes)
+│   ├── dashboard.py              # Pretty terminal UI (rich) showing active speaker and live transcripts
+│   ├── server.py                 # Optional hybrid WebSocket coordinator for noisy environments
 │   └── topics.json               # Curated list of fun tech/AI debate topics
 │
 └── character_agents/             # [ATTENDEE WORKSHOP FOLDER] Clean template for participants
-    ├── README.md                 # "How to build your Character Agent in 3 minutes"
-    ├── run_my_agent.py           # The script attendees run to connect to the host's server
-    ├── test_local_voice.py       # Standalone script: attendee tests voice & audio without server
-    ├── agent_builder.py          # Clean participant agent class
+    ├── README.md                 # "How to build your Acoustic Voice Agent in 3 minutes"
+    ├── run_my_agent.py           # Listens via laptop Microphone (STT), wakes on team name, speaks via Speaker!
+    ├── test_local_voice.py       # Standalone script: tests both Speaker output (TTS) & Microphone input (STT)
+    ├── agent_builder.py          # Modular participant agent class with listen_on_mic() and speak_turn()
     └── presets/                  # Pre-configured example characters for attendees to inspect
         ├── orange_optimist.json  # Tech Optimist persona & voice config
         ├── red_skeptic.json      # Pragmatic Skeptic persona & voice config
@@ -84,93 +84,89 @@ pass-the-mic/
 
 ## ⚡ 3. Core Technical Specifications
 
-### A. Zero-Cost, Reliable Audio Pipeline (`core/tts.py` & `core/audio.py`)
-- Powered by `edge-tts` (Microsoft Edge Neural Voices). It requires **no API keys, no subscriptions, has zero rate limits**, and sounds remarkably human.
+### A. Zero-Cost Speaker Output (`core/tts.py` & `core/audio.py`)
+- Powered by `edge-tts` (Microsoft Edge Neural Voices). Requires **no API keys, no subscriptions, has zero rate limits**, and sounds remarkably human.
 - Curated voice dictionary:
-  - **Moderator:** `en-US-GuyNeural` (Authoritative, broadcast tone)
+  - **Moderator:** `en-US-GuyNeural` (Authoritative, clear broadcast tone)
   - **Team Orange:** `en-US-AriaNeural` (Energetic, upbeat)
   - **Team Red:** `en-GB-RyanNeural` (British, analytical, sharp)
   - **Team Blue:** `en-AU-NatashaNeural` (Australian, relaxed, articulate)
   - **Team Emerald:** `en-US-ChristopherNeural` (Confident, direct)
-- **Blocking Playback:** Speech playback blocks execution while an agent is speaking so laptops do not talk over each other in the room.
 
-### B. The Structured Turn-Taking Protocol (`core/protocol.py`)
-To prevent hallucinations and guarantee the mic is passed cleanly, every agent returns valid JSON:
-```json
-{
-  "speaker": "Team Orange",
-  "spoken_text": "I believe open-source agents are moving faster than closed labs. Passing the mic to Team Red — how do you see the safety trade-off?",
-  "next_agent": "Team Red"
-}
-```
-If an LLM hallucinates or returns malformed text, `core/protocol.py` includes robust regex repair and fallback selection to guarantee uninterrupted roundtable flow.
+### B. Zero-Cost Microphone Listening & Speech-to-Text (`core/audio.py` & `core/stt.py`)
+- **Voice Activity Detection (VAD):** `core/audio.py` uses `sounddevice` to continuously monitor microphone RMS energy, automatically starting recording when someone in the room speaks and stopping after `1.8s` of silence.
+- **Multi-Backend Speech-to-Text (`core/stt.py`):**
+  1. **Groq Whisper (`whisper-large-v3-turbo`):** Sub-second transcription when `GROQ_API_KEY` is configured.
+  2. **Google Web Speech API (via `SpeechRecognition`):** **100% free and requires zero API keys**, working out-of-the-box on any laptop!
+  3. **OpenAI Whisper (`whisper-1`):** Optional fallback.
 
-### C. Fast LLM Pipeline (`core/llm.py`)
-- **Primary:** [Groq Llama-3 free tier](https://console.groq.com/keys) (`llama-3.3-70b-versatile` or `llama-3.1-8b-instant`) for sub-second turn latency.
-- **Secondary Fallback:** OpenAI (`gpt-4o-mini`).
-- **Zero-Key Simulation Mode:** If no API key is provided, the engine automatically activates an intelligent contextual simulation generator matching each persona, ensuring instant testing out of the box with zero setup hurdles.
+### C. Acoustic Wake-Phrase Detection & Turn Protocol (`core/protocol.py`)
+- Every agent ends its spoken turn by clearly saying *"Passing the mic to [Next Team]!"* out loud through its speaker.
+- `detect_mic_pass_in_transcript()` in [`core/protocol.py`](file:///k:/Tech/Projects/pass-the-mic/core/protocol.py) scans microphone STT transcripts with built-in **homophone tolerance** (e.g., matching `"team read"` ➔ `"Team Red"`, `"team blew"` ➔ `"Team Blue"`, `"passing the mike"` ➔ `"passing the mic"`).
+- Internally, LLM responses follow a strict JSON schema:
+  ```json
+  {
+    "speaker": "Team Orange",
+    "spoken_text": "I believe open-source agents are moving faster than closed labs. Passing the mic to Team Red!",
+    "next_agent": "Team Red"
+  }
+  ```
 
 ---
 
 ## 🚀 4. Quickstart Guide
 
-### Option A: Test Solo on 1 Laptop (No Server Required!)
-Simulate the entire multi-agent voice roundtable on a single machine:
+### Option A: Simulate on 1 Laptop (`simulate_roundtable.py`)
+Test the entire multi-agent voice roundtable on a single machine:
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/pass-the-mic.git
-cd pass-the-mic
-
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the simulation (Speaks out loud in 3 distinct voices!)
+# Run the simulation (Speaks out loud through your speakers in 3 distinct voices!)
 python simulate_roundtable.py --rounds 3
 
-# (Optional) Run fast muted text-only test:
+# Speak into your OWN laptop microphone in Round 1 and pass the mic to an AI agent!
+python simulate_roundtable.py --rounds 3 --live-mic
+
+# Fast muted text-only test:
 python simulate_roundtable.py --mute --rounds 2
 ```
 
 ---
 
-### Option B: For the Meetup Host (Running the Room)
+### Option B: For Meetup Attendees (Running Your Laptop Agent)
 
-1. **Start the Coordinator Server:**
-   ```bash
-   python -m moderator.server
-   ```
-2. The terminal will display your **Local LAN IP** and WebSocket address:
-   ```text
-   Host LAN IP: 192.168.1.42:8000
-   WebSocket URI: ws://192.168.1.42:8000/ws
-   ```
-3. Announce your IP to the room. As attendees connect, they will appear live on your dashboard.
-4. **Trigger the debate** by calling the `/start` endpoint from your browser or curl:
-   ```bash
-   curl -X POST http://localhost:8000/start -H "Content-Type: application/json" -d "{\"max_turns\": 6}"
-   ```
-   Or visit `http://localhost:8000` to inspect connected teams.
-
----
-
-### Option C: For Meetup Attendees (Building Your Agent)
-
-1. Navigate to the [`character_agents/`](file:///k:/Tech/Projects/pass-the-mic/character_agents) directory:
+1. Navigate to [`character_agents/`](file:///k:/Tech/Projects/pass-the-mic/character_agents):
    ```bash
    cd character_agents
    ```
-2. **Test your voice locally** on your laptop speakers (no server required!):
+2. **Test your Speaker AND your Microphone locally:**
    ```bash
+   # Test Speaker output (TTS)
    python test_local_voice.py --preset presets/orange_optimist.json
+
+   # Test both Speaker AND Microphone (records 4s from your mic and reads it back!)
+   python test_local_voice.py --preset presets/orange_optimist.json --test-mic
    ```
-3. **(Optional) Configure your Groq free-tier API key** in `.env`:
-   ```env
-   GROQ_API_KEY=gsk_your_key_here
-   ```
-4. **Connect to the host** over local Wi-Fi:
+3. **Start listening and debating at the table:**
    ```bash
-   python run_my_agent.py --preset presets/orange_optimist.json --host 192.168.1.42
+   python run_my_agent.py --preset presets/orange_optimist.json
    ```
+   Your laptop will calibrate to ambient room noise, listen via its **Microphone**, wake up whenever someone in the room says *"Passing the mic to Team Orange!"*, and respond out loud via its **Speaker**!
+
+---
+
+### Option C: For the Meetup Host (Running the Moderator Laptop)
+
+Place the Host laptop at the head of the table with speaker volume at 80–100% and run:
+```bash
+python moderator/run_moderator.py --teams "Team Orange,Team Red,Team Blue" --rounds 6
+```
+The Host laptop will:
+1. **Speak** the debate topic out loud and pass the mic to the opening team.
+2. **Listen** via its microphone to transcribe each laptop's speech in the room.
+3. **Intervene out loud** if the room goes silent or a laptop misses a wake phrase.
+4. **Conclude and summarize** the debate out loud after all rounds finish!
 
 ---
 
@@ -189,56 +185,15 @@ python simulate_roundtable.py --mute --rounds 2
 
 ---
 
-## 📡 6. Protocol Specification
+## 🛡️ 6. Acoustic Resilience Features
 
-All communication between the Host and Attendees occurs via WebSocket JSON payloads:
-
-### Registration (`Attendee -> Host`)
-```json
-{
-  "type": "register",
-  "name": "Team Orange",
-  "voice": "en-US-AriaNeural",
-  "persona": "Tech Optimist"
-}
-```
-
-### Turn Grant (`Host -> Attendee`)
-```json
-{
-  "type": "your_turn",
-  "topic": "Will open weights outpace closed frontier labs by 2027?",
-  "history": [
-    {"speaker": "Moderator", "spoken_text": "..."}
-  ],
-  "available_agents": ["Team Red", "Team Blue"],
-  "round_number": 1,
-  "time_limit_sec": 45
-}
-```
-
-### Turn Submission (`Attendee -> Host`)
-```json
-{
-  "type": "turn_complete",
-  "turn": {
-    "speaker": "Team Orange",
-    "spoken_text": "Open source is moving at unprecedented speed. Passing the mic to Team Red — what is your take on compute bottlenecks?",
-    "next_agent": "Team Red"
-  }
-}
-```
-
----
-
-## 🛡️ 7. Edge Cases & Resilience
-
-- **Self-Passing Prevention:** If an agent attempts to pass the mic to itself, the protocol parser automatically catches the error and redirects to an eligible peer.
-- **Disconnected Agent Recovery:** If an agent drops Wi-Fi or closes their laptop during their turn, the Host Moderator steps in with an intervention voice alert and passes the mic to another active participant.
-- **Cross-Platform Audio:** Safe mixer unload handling guarantees zero file-lock errors on Windows while streaming audio.
+- **Half-Duplex Echo Lock:** A laptop never records from its microphone while its own speaker is active, plus a `0.35s` post-speech cooldown.
+- **Adaptive Ambient Noise Calibration:** Every agent samples 1 second of ambient room noise on startup to calibrate its VAD energy threshold automatically.
+- **Homophone-Tolerant Wake Detection:** Handles STT variations (`"team read"` ➔ `"Team Red"`, `"team blew"` ➔ `"Team Blue"`, `"mike"` ➔ `"mic"`).
+- **Spoken Wake Enforcement:** Even if an LLM forgets to include the wake phrase in its text, `parse_agent_turn()` automatically appends `"Passing the mic to <Next Team>!"` before TTS synthesis so the next laptop's microphone is guaranteed to hear the trigger.
 
 ---
 
 ## 📜 License
 
-MIT License. Crafted for multi-agent voice AI meetups and hackathons.
+MIT License. Crafted for live, in-person multi-agent voice AI meetups and hackathons.
