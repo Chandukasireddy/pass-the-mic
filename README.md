@@ -2,6 +2,54 @@
 
 A clean, production-ready Python repository for running live, in-person multi-agent voice roundtable debates across laptops on a local Wi-Fi network.
 
+## Name-triggered live character (Merge Gateway)
+
+Run **Rex**, a commanding, sharp-witted voice character that listens to the room
+and replies when someone mentions its name. This standalone mode uses
+`openai/gpt-live-1` through Merge Gateway for both hearing and speech.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-live.txt
+# Add MERGE_GATEWAY_API_KEY=mg_... to your local .env (keep it private).
+python -m character_agents.run_live_agent
+```
+
+Try: **“Rex, everyone says AI will replace developers. What do you think?”**
+Press **Ctrl+C** to stop the microphone, close the session, and print billed seconds.
+Rename the character with `--name Aura`, choose a voice with `--voice marin`, or edit
+[`rex_live.json`](character_agents/presets/rex_live.json) to change personality and delivery.
+Use `--dry-run` to inspect configuration without an API call or microphone access,
+and `--list-devices` plus `--input-device ID --output-device ID` to select audio hardware.
+The live display shows microphone levels, sent audio frames, received events, and
+whether Rex's name has been heard. `--check-mic` runs a 10-second local microphone
+meter without a key or a billed session. `SOUND DETECTED` means the microphone is
+receiving sound; `[ROOM]` captions confirm transcription and `[MENTION]` confirms
+the name trigger. If the meter stays `SILENT` while you speak, check the selected
+input and macOS System Settings → Privacy & Security → Microphone permissions for
+the application launching Python (Terminal or Codex).
+On macOS, allow microphone access for your terminal. On Linux, sounddevice may
+also require your distribution's PortAudio package (`libportaudio2` on Debian/Ubuntu).
+
+The app streams room audio to Merge/OpenAI while connected, including before a
+name is mentioned. Listening time is billed too. Input transcripts open a bounded
+playback window after a whole-name match; the personality prompt asks for one brief
+reply and then silence. Matching depends on transcription accuracy, with a short
+debounce for fragmented names. It is not speaker identification or an offline wake
+word engine. Because GPT-Live has no audio-turn-complete event, the playback window
+closes after an idle gap or a 25-second limit; long pauses may truncate a reply.
+Audio arriving before name detection is discarded. The microphone sends silence
+during speaker playback and briefly afterward to reduce echo, so spoken interruptions
+during a reply are not supported in this mode. There is no tool/lookup backend.
+
+This mode runs independently of the moderator's coordinated roundtable turns.
+The same preset also works with the existing Edge-TTS voice tester and roundtable
+agent; those continue using their existing providers.
+
+Protocol sources: [Merge live voice](https://docs.merge.dev/merge-gateway/capabilities/multimodal/live-voice),
+[OpenAI Live WebSocket events](https://developers.openai.com/api/reference/resources/live/primary-websocket).
+
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        PASS-THE-MIC TOPOLOGY                           │

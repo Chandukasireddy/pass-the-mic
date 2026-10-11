@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pass the Mic</title>
+<style>
+  :root { --bg:#14161a; --fg:#e8eaed; --muted:#8b9099; --accent:#4ade80; --warn:#fbbf24; --bar:#2a2e36; --danger:#ef4444; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f7f7f5; --fg:#1b1d21; --muted:#6a6f78; --accent:#16a34a; --warn:#b45309; --bar:#dcdde0; --danger:#dc2626; }
+  }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--fg);
+         font:16px/1.5 -apple-system, system-ui, sans-serif; }
+  main { width:min(420px, 100% - 32px); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p { color:var(--muted); margin:0 0 20px; }
+  button { font:inherit; padding:10px 18px; border-radius:8px; border:0; background:var(--accent); color:#06210f; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .meter { height:10px; background:var(--bar); border-radius:5px; margin:20px 0 8px; overflow:hidden; }
+  .meter > div { height:100%; width:0; background:var(--accent); transition:width .08s linear; }
+  #status { color:var(--muted); font-size:14px; min-height:1.5em; }
+  #status.warn { color:var(--warn); }
+  #agent { margin-top:20px; padding-top:16px; border-top:1px solid var(--bar); }
+  #agent .row { display:flex; gap:10px; }
+  button.stop { background:var(--danger); color:#fff; }
+  #agentState { margin-top:10px; font-size:14px; color:var(--muted); min-height:1.5em; }
+  #agentState.live { color:var(--danger); font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pass the Mic</h1>
+  <p>Your browser captures the microphone and plays the character's voice. Keep this tab open.</p>
+  <button id="start">Start microphone</button>
+  <div class="meter"><div id="level"></div></div>
+  <div id="status">Not started.</div>
+  <div id="agent" hidden>
+    <div class="row">
+      <button id="agentStart" disabled>Start agent</button>
+      <button id="agentStop" class="stop" disabled>Stop agent</button>
+    </div>
+    <div id="agentState">Agent stopped. Not billing.</div>
+  </div>
+</main>
+<script>
+const RATE = 24000, FRAME = 480;
+const $ = id => document.getElementById(id);
+const status = (t, warn) => { $("status").textContent = t; $("status").className = warn ? "warn" : ""; };
+
+const workletSource = `
+class Capture extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Int16Array(${FRAME}); this.n = 0; }
+  process(inputs) {
+    const ch = inputs[0][0];
+    if (!ch) return true;
+    for (let i = 0; i < ch.length; i++) {
+      const s = Math.max(-1, Math.min(1, ch[i]));
+      this.buf[this.n++] = s < 0 ? s * 32768 : s * 32767;
+      if (this.n === ${FRAME}) {
+        const out = this.buf.slice();
+        this.port.postMessage(out.buffer, [out.buffer]);
+        this.n = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("capture", Capture);`;
+
+let liveSince = null;
+setInterval(() => {
+  if (liveSince === null) return;
+  const t = Math.floor((Date.now() - liveSince) / 1000);
+  $("agentState").textContent = `Agent live. Billing ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+}, 500);
+
+function applyAgentStatus(m) {
+  const st = m.state;
+  $("agentStart").disabled = st !== "idle";
+  $("agentStop").disabled = !(st === "live" || st === "connecting");
+  $("agentState").className = st === "live" ? "live" : "";
+  liveSince = st === "live" ? (liveSince ?? Date.now()) : null;
+  if (st === "live") return;
+  const text = {
+    idle: "Agent stopped. Not billing.",
+    connecting: "Connecting to the agent...",
+    stopping: "Stopping...",
+  }[st] || st;
+  $("agentState").textContent = text + (m.message ? " " + m.message : "");
+}
+
+async function start() {
+  $("start").disabled = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true },
+    });
+  } catch (err) {
+    status("Microphone blocked: " + err.name + ". Allow it in the address bar (lock icon), then reload.", true);
+    $("start").disabled = false;
+    return;
+  }
+
+  const ctx = new AudioContext({ sampleRate: RATE });
+  await ctx.resume();
+  const url = URL.createObjectURL(new Blob([workletSource], { type: "text/javascript" }));
+  await ctx.audioWorklet.addModule(url);
+  const node = new AudioWorkletNode(ctx, "capture");
+  const mute = ctx.createGain();
+  mute.gain.value = 0;  // Keeps the worklet pulled without echoing the mic.
+  ctx.createMediaStreamSource(stream).connect(node).connect(mute).connect(ctx.destination);
+
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = "arraybuffer";
+  let next = 0, sources = new Set(), quietSince = performance.now(), heard = false;
+
+  ws.onopen = () => {
+    status("Microphone on (free). Click Start agent to begin the billed session.");
+    $("agent").hidden = false;
+  };
+  $("agentStart").onclick = () => { $("agentStart").disabled = true; ws.send(JSON.stringify({ type: "agent", action: "start" })); };
+  $("agentStop").onclick = () => { $("agentStop").disabled = true; ws.send(JSON.stringify({ type: "agent", action: "stop" })); };
+  ws.onclose = () => { status("Disconnected from the local agent. You can close this tab.", true); stream.getTracks().forEach(t => t.stop()); };
+
+  node.port.onmessage = e => {
+    const pcm = new Int16Array(e.data);
+    let peak = 0;
+    for (let i = 0; i < pcm.length; i++) peak = Math.max(peak, Math.abs(pcm[i]));
+    const db = peak ? 20 * Math.log10(peak / 32768) : -96;
+    $("level").style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + "%";
+    if (db > -60) heard = true;
+    if (!heard && performance.now() - quietSince > 4000) status("The browser is receiving silence. Check System Settings > Sound > Input.", true);
+    if (ws.readyState === WebSocket.OPEN) ws.send(e.data);
+  };
+
+  ws.onmessage = e => {
+    if (typeof e.data === "string") {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "clear") { sources.forEach(s => { try { s.stop(); } catch {} }); sources.clear(); next = 0; }
+      if (msg.type === "status") applyAgentStatus(msg);
+      return;
+    }
+    const pcm = new Int16Array(e.data);
+    const buf = ctx.createBuffer(1, pcm.length, RATE);
+    const f = buf.getChannelData(0);
+    for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    next = Math.max(next, ctx.currentTime + 0.03);
+    src.start(next);
+    next += buf.duration;
+    sources.add(src);
+    src.onended = () => sources.delete(src);
+  };
+}
+$("start").addEventListener("click", start);
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Standalone live agent; the existing roundtable dependencies are not required.
+websockets>=13.0
+python-dotenv>=1.0.1
+sounddevice>=0.5.1
